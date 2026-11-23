@@ -130,6 +130,9 @@ def main() -> None:
             m.pop("top", None)
     html = replace_block(html, "COMPARE", f"const COMPARE = {dump(compare)};")
     html = replace_block(html, "ENRICH", f"const ENRICH = {dump(enrich_summary())};")
+    report_file = DATA / "evals" / "report.json"
+    report = json.loads(report_file.read_text(encoding="utf-8")) if report_file.exists() else {}
+    html = replace_block(html, "EVAL", f"const EVAL = {dump(report)};")
     PAGE.write_text(html, encoding="utf-8")
     print(f"updated {PAGE.relative_to(ROOT)}")
 

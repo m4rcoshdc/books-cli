@@ -265,7 +265,10 @@ def _remote(tool: str, args: dict) -> dict | None:
     return out
 
 
-PER_BOOK = 3  # across the whole library, at most this many hits per book (0 = no cap)
+# Max hits per book when searching the whole library (0 = no cap). Phase 6 evals: a cap of 3
+# only cost answers on single-target questions (hit@10 0.86 -> 0.91 without it, nothing broke),
+# so it's off by default. Agents pass per_book=2 for comparative, cross-book questions.
+PER_BOOK = 0
 
 
 def search(query: str, k: int = 8, book: str | None = None, mode: str = "hybrid", notes: bool = False,
@@ -273,8 +276,8 @@ def search(query: str, k: int = 8, book: str | None = None, mode: str = "hybrid"
     """Passages that answer a question. Hybrid (keyword + meaning) when the model is
     loaded here or in `books serve`; keyword-only otherwise, with a note saying so.
 
-    Without a book filter, hits are capped per book so one book can't crowd out the
-    others on a cross-book question; the next-best passages from other books move up."""
+    per_book caps hits per book (whole-library searches only), so one book can't crowd
+    out the others on a comparative question; the next-best passages from other books move up."""
     if mode not in ("hybrid", "keyword", "semantic"):
         raise NotFound(f"Unknown mode '{mode}': use hybrid, keyword or semantic.")
     book_id = resolve_book(book) if book else None

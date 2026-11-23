@@ -34,6 +34,11 @@ uv run books search "question" [-b BOOK] [-k N] [--per-book N] [--notes]
 uv run books read CHUNK_ID [-C N]      # exact text + "Cite as" line
 uv run books related "concept"         # where an idea appears across books
 uv run books figure BOOK:fig-NNN       # chart values / table / Mermaid / LaTeX
+
+# Phase 6: evals (re-run `eval run` after ANY change to search or ranking)
+uv run books eval run                  # score all modes on the frozen set -> data/evals/report.json (free)
+uv run books eval judge [--yes]        # Haiku grades top-5 pairs not judged yet (cents)
+uv run books eval questions [--yes]    # only if the sample changes; bump QUESTION_VERSION to rebuild
 ```
 
 ## Layout
@@ -48,15 +53,16 @@ uv run books figure BOOK:fig-NNN       # chart values / table / Mermaid / LaTeX
 - `src/bookshelf/chunk.py`: ~400-word passages that never cross a chapter. Figures stay with their captions and equations with their sentences. Chunk id `book:SSS:NNN` is the citation key. `context_before` holds the tail of the previous chunk, for search only. Bump `CHUNKER_VERSION` when chunking logic changes.
 
 - `src/bookshelf/index.py`: one SQLite file with `chunks`, `chunks_fts` (FTS5 BM25, accent-insensitive, column weights text 1 / path 2 / context 0.3 / title 0.5) and `chunk_vec` (sqlite-vec, cosine). Hybrid = Reciprocal Rank Fusion (k=60) over the top 50 of each mode. It's built into a temp file and swapped in.
-- `src/bookshelf/embed.py`: BAAI/bge-m3, pinned revision. Runs on the GPU (RTX 3050 Ti, 4 GB) in fp16 via CUDA PyTorch (`pyproject.toml` points `torch` at the cu132 index), falling back to CPU fp32. Precision is part of the cache key. Cold start is ~47 s per process (imports plus weight loading); a query itself takes ~0.06 s, so agents need a long-running process (Phase 6). Download it with `scripts/download_model.py` (~2.3 GB into the Hugging Face cache). Vectors are cached by text hash in `data/cache/embeddings.sqlite`, so rebuilds only embed changed chunks. Disk on C: is tight; check free space before large downloads.
+- `src/bookshelf/embed.py`: BAAI/bge-m3, pinned revision. Runs on the GPU (RTX 3050 Ti, 4 GB) in fp16 via CUDA PyTorch (`pyproject.toml` points `torch` at the cu132 index), falling back to CPU fp32. Precision is part of the cache key. Cold start is ~47 s per process (imports plus weight loading); a query itself takes ~0.06 s, so agents use the long-running `books serve` (Phase 5). Download it with `scripts/download_model.py` (~2.3 GB into the Hugging Face cache). Vectors are cached by text hash in `data/cache/embeddings.sqlite`, so rebuilds only embed changed chunks. Disk on C: is tight; check free space before large downloads.
 
 - `src/bookshelf/enrich.py`: Claude Haiku 5.5 (the user's choice: cheap labeling; the downstream agent will be the strong model). Output is structured JSON (`output_config.format`), effort low. Three request kinds: figure (image to type and data: chart values, Markdown tables, Mermaid diagrams, LaTeX), chapter card (summary, key points with chunk ids, concepts, entities, data points, questions), and book card. Batch by default (50% off); `--now` makes direct calls, 8 at a time, at full price. Content-hashed custom ids, so re-runs only pay for changes. Results go in `data/books/<id>/enrich/*.jsonl`, usage and cost in `data/enrich/usage.jsonl`. Bump `VERSIONS[kind]` to redo a kind.
 - Figure descriptions reach search through the chunker (`load_figure_notes`); stage 1 files are never modified. Order: figures, then `books chunk`, then `books index`, then chapter cards (cards read chunk text).
 - `src/bookshelf/concepts.py`: groups chapter-card concept names with bge-m3 (cosine >= 0.90; 0.86 wrongly merged "leverage" with "leverage point") into `data/concepts.json`. No LLM.
-- `src/bookshelf/library.py`: Phase 5 core. Every agent-facing tool is a function returning plain dicts (`TOOLS`). The CLI, the server and any future MCP layer must stay thin wrappers over it. Search caps hits at 3 per book across the library; hybrid falls back to keyword (with a note) when the model isn't loaded here or in the server.
+- `src/bookshelf/library.py`: Phase 5 core. Every agent-facing tool is a function returning plain dicts (`TOOLS`). The CLI, the server and any future MCP layer must stay thin wrappers over it. Search has no per-book cap by default (Phase 6 evals showed a cap of 3 only cost answers); `per_book=2` is for comparative questions. Hybrid falls back to keyword (with a note) when the model isn't loaded here or in the server.
 - `src/bookshelf/present.py`: compact text rendering per tool. Text is about half the tokens of JSON; keep full ids so they can be pasted into the next command.
 - `src/bookshelf/server.py`: `books serve`, a stdlib HTTP server on 127.0.0.1:8765 that keeps bge-m3 warm. It refuses browser requests (Origin / Sec-Fetch-Site headers) and is single-threaded (one GPU model). Restart it after changing `library.py`.
 - `.claude/skills/books/SKILL.md`: teaches agents the zoom-in workflow and citation rules. Commands use `uv run --project <abs path>`, so it works from any folder; copy it to `~/.claude/skills/` to use it outside this project.
+- `src/bookshelf/evals.py`: Phase 6. 6 passages per book (one seed per book), Haiku writes a question per passage (lookup / paraphrase / crosslang), `lint()` drops generic questions and ones that point at the source (applied to all questions, never only to failures). Dev/test split by chunk-id hash. Metrics: hit@1/5/10, MRR, near@5, book@5, answered@5 (Haiku judge, blind to the target). `CONFIGS["hybrid"]` must match the library's default search. Eval spend is logged separately in `data/evals/usage.jsonl`. Baseline (2026-11-23, 123 questions): hybrid hit@5 0.88, hit@10 0.92, MRR 0.76. Decide changes on dev, look at test once.
 - API key: `ANTHROPIC_API_KEY` env var or the project `.env` (gitignored). Never print it.
 
 ## Rules
@@ -70,6 +76,6 @@ uv run books figure BOOK:fig-NNN       # chart values / table / Mermaid / LaTeX
 
 ## Roadmap
 
-0 catalog → 1 extract → 2 chunk → 3 index → 4 enrich ($1.96 on Haiku) → 5 access (CLI tools, warm server, skill; all done) → **6 evals**. MCP was deliberately skipped: Claude Code uses the CLI and skill. Add it as a thin layer over `library.TOOLS` only if the library is wanted in apps without a shell (e.g. a regular Claude Desktop chat).
+0 catalog → 1 extract → 2 chunk → 3 index → 4 enrich ($1.96 on Haiku) → 5 access (CLI tools, warm server, skill) → 6 evals ($0.18; per-book cap turned off by default). All phases done. Open ideas, to be judged by `books eval run`: on paraphrase questions semantic (80%) beats hybrid (77%); human-written questions would make the set more realistic; cross-language has only 5 questions. MCP was deliberately skipped: Claude Code uses the CLI and skill. Add it as a thin layer over `library.TOOLS` only if the library is wanted in apps without a shell (e.g. a regular Claude Desktop chat).
 
 Kindle highlights were dropped on 2026-11-23 (the user has few highlights). If they come back, they'd attach to chunk ids like the enrichment cards do.

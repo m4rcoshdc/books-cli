@@ -147,7 +147,7 @@ def search(
     k: int = typer.Option(8, "--k", "-k", help="Number of results"),
     book: str = typer.Option(None, "--book", "-b", help="Limit to one book (id or part of title)"),
     notes: bool = typer.Option(False, "--notes", help="Also search notes/appendix (back matter)"),
-    per_book: int = typer.Option(3, "--per-book", help="Max results per book when searching all books (0 = no cap)"),
+    per_book: int = typer.Option(0, "--per-book", help="Max results per book (e.g. 2 for comparative questions; 0 = no cap)"),
     as_json: bool = _JSON,
 ):
     """Find passages that answer a question. Each result is a citable passage id.
@@ -325,6 +325,55 @@ def enrich_status():
     for j in en.load_jobs():
         typer.echo(f"{j['batch_id']}  {j['status']:<10} {len(j['custom_ids']):>5} requests  {j['submitted_at']}")
     typer.echo(f"spent: {en.spent()}")
+
+
+eval_app = typer.Typer(no_args_is_help=True, help="Phase 6: measure search quality on a frozen question set.")
+app.add_typer(eval_app, name="eval")
+
+
+def _money(n, t, c):
+    typer.echo(f"\r  {n}/{t}  ${c:.3f}   ", nl=False)
+
+
+@eval_app.command("questions")
+def eval_questions(yes: bool = typer.Option(False, "--yes", help="Actually send (without it: estimate only)")):
+    """Build the test set: Haiku writes one question per sampled passage (only missing ones)."""
+    from . import evals as ev
+
+    r = ev.build_questions(send=yes, progress=_money)
+    typer.echo(f"\n{r}")
+    if not yes and r.get("pending"):
+        typer.echo("Add --yes to send.")
+
+
+@eval_app.command("judge")
+def eval_judge(yes: bool = typer.Option(False, "--yes", help="Actually send (without it: estimate only)")):
+    """Haiku grades every mode's top 5 (only pairs not judged before)."""
+    from . import evals as ev
+
+    qs = ev.eval_set()
+    cands, rows = ev.candidates(qs)
+    r = ev.judge(ev.judge_pools(qs, cands, rows), {q["id"]: q for q in qs}, send=yes, progress=_money)
+    typer.echo(f"\n{r}")
+
+
+@eval_app.command("run")
+def eval_run():
+    """Score every search mode on the frozen set and write data/evals/report.json (no API calls)."""
+    from . import evals as ev
+
+    r = ev.report()
+    typer.echo(f"{r['questions']} questions ({r['split']['dev']} dev / {r['split']['test']} test), "
+               f"styles {r['styles']}")
+    typer.echo(f"\n{'mode':<20} {'split':<5} {'hit@1':>6} {'hit@5':>6} {'hit@10':>6} {'MRR':>6} {'ans@5':>6}")
+    for name, splits in r["modes"].items():
+        for split, s in splits.items():
+            typer.echo(f"{name:<20} {split:<5} {s['hit@1']:>6.2f} {s['hit@5']:>6.2f} {s['hit@10']:>6.2f} "
+                       f"{s['mrr']:>6.2f} {s.get('answered@5', 0):>6.2f}")
+    if r["unjudged_pairs"]:
+        typer.secho(f"\n{r['unjudged_pairs']} result pairs not judged yet: ans@5 undercounts. "
+                    "Run `books eval judge --yes`.", fg="yellow")
+    typer.echo(f"\nspent on evals: {r['spent']}")
 
 
 @app.command("list")

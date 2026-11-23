@@ -38,7 +38,7 @@ For "what does book X argue", start with `books book X`. For cross-book question
 - If the library doesn't cover something, say so. Don't fill gaps from general knowledge without saying which part is not from the books.
 - Two books are in Portuguese: *A Lanterna na Popa* (Roberto Campos) and *O Livro do Desassossego* (Fernando Pessoa). With the server on, English questions find Portuguese passages. Quote the original and translate it if helpful.
 - Book arguments accept any unambiguous part of the id, title or author (`-b systems`, `-b perez`).
-- Searching all books returns at most 3 passages per book, so one book can't crowd out the others. Use `--per-book 0` to lift the cap. If a name is ambiguous, the error lists the matches.
+- For comparative or cross-book questions ("how do different authors see X?"), add `--per-book 2` so one book can't fill all the results. Leave it off for specific lookups: measured, it pushes the right passage out. If a name is ambiguous, the error lists the matches.
 
 ## Meaning search needs the server
 
