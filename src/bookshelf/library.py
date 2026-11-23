@@ -126,13 +126,26 @@ def _first_sentence(text: str, max_words: int = 30) -> str:
     return s if len(words) <= max_words else " ".join(words[:max_words]) + " …"
 
 
+def _norm(s: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "", s.lower())
+
+
+@functools.cache
 def _one_lines(book_id: str) -> dict[int, str]:
-    """Chapter one-liners: the book card's, else the first sentence of the chapter card."""
+    """Chapter one-liners. The chapter card's first sentence comes first: each card was
+    made from exactly one section, so it can't be misfiled. The book card's one-liner
+    only fills gaps, and only when its title matches the real section's title: Haiku
+    numbered 127 of 549 book-card entries wrongly (e.g. Munger's Talk Four got the
+    psychology talk's line), so its section numbers are never trusted on their own."""
     out = {s: _first_sentence(c["summary"]) for s, c in _chapter_cards(book_id).items()}
+    paths = {s["n"]: s["path"] for s in _manifest(book_id)["sections"]}
     card = _book_card(book_id)
-    for s in (card or {}).get("structure", []):
-        if s.get("one_line"):
-            out[s["section"]] = s["one_line"]
+    for e in (card or {}).get("structure", []):
+        n, line, title = e["section"], e.get("one_line"), _norm(e.get("title", ""))
+        if n in out or not line or not title:
+            continue
+        if any(_norm(p) and (title in _norm(p) or _norm(p) in title) for p in paths.get(n, [])):
+            out[n] = line
     return out
 
 
