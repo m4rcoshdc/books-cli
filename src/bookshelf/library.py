@@ -120,8 +120,17 @@ def _chunk_counts() -> dict[tuple[str, int], int]:
     return {(b, s): n for b, s, n in rows}
 
 
+_NOT_AN_END = re.compile(r"(?:\b[A-Z]|\b(?:Mr|Mrs|Ms|Dr|St|Jr|Sr|Co|Inc|vs|No|Vol|ch|pp?))\.$")
+
+
 def _first_sentence(text: str, max_words: int = 30) -> str:
-    s = re.split(r"(?<=[.!?])\s", text.strip(), maxsplit=1)[0]
+    """Up to the first sentence end, skipping initials and abbreviations ("John D. Rockefeller", "Dr.")."""
+    text = text.strip()
+    s = text
+    for m in re.finditer(r"[.!?](?=\s)", text):
+        if not _NOT_AN_END.search(text[: m.end()]):
+            s = text[: m.end()]
+            break
     words = s.split()
     return s if len(words) <= max_words else " ".join(words[:max_words]) + " …"
 
