@@ -11,7 +11,12 @@ before reaching for an LLM.
 
 ## Run
 
+`README.md` is the public guide for people forking this. Keep it in sync when commands change.
+
 ```
+uv run books build [ID...] [--yes] [--no-embed]   # whole pipeline; free without --yes; re-runs skip unchanged
+uv run books skill [--global] [--print]           # generate the Claude Code skill for this library
+
 uv run books catalog            # Phase 0: books/metadata.db -> data/catalog.json
 uv run books extract [ID...]    # Phase 1: -> data/books/<id>/{book.json,sections/*.md}
 uv run books chunk [ID...]      # Phase 2: -> data/books/<id>/chunks.jsonl
@@ -62,9 +67,14 @@ uv run books eval questions [--yes]    # only if the sample changes; bump QUESTI
 - Book cards' `structure` section numbers are unreliable: Haiku misnumbered 127 of 549 entries. Chapter one-liners come from chapter cards first. A book-card line is used only when its title matches the real section. Never key anything on an LLM-produced section number without checking it against `book.json`.
 - `src/bookshelf/present.py`: compact text rendering per tool. Text is about half the tokens of JSON; keep full ids so they can be pasted into the next command.
 - `src/bookshelf/server.py`: `books serve`, a stdlib HTTP server on 127.0.0.1:8765 that keeps bge-m3 warm. It refuses browser requests (Origin / Sec-Fetch-Site headers) and is single-threaded (one GPU model). Restart it after changing `library.py`.
-- `.claude/skills/books/SKILL.md`: teaches agents the zoom-in workflow and citation rules. Commands use `uv run --project <abs path>`, so it works from any folder; copy it to `~/.claude/skills/` to use it outside this project.
+- `.claude/skills/books/SKILL.md`: teaches agents the zoom-in workflow and citation rules. It's **generated** by `books skill` (`skill.py`) from `src/bookshelf/skill_template.md`, filling in this folder's path, the book list and non-English books. It's gitignored because it contains a machine path and a personal library. To change the skill, edit the template, then re-run `books skill`. `--global` also writes `~/.claude/skills/books/`.
+- Portability: unknown ids in `metadata_overrides.json` only warn (forks carry the author's file). `ebook-convert` is looked up on PATH, then in Calibre's default install folders on Windows, macOS and Linux. PyTorch uses the cu132 index everywhere except macOS. The `.env` reader accepts UTF-8, UTF-8 with BOM and UTF-16 (PowerShell's `>`). Only tested on Windows.
 - `src/bookshelf/evals.py`: Phase 6. 6 passages per book (one seed per book), Haiku writes a question per passage (lookup / paraphrase / crosslang), `lint()` drops generic questions and ones that point at the source (applied to all questions, never only to failures). Dev/test split by chunk-id hash. Metrics: hit@1/5/10, MRR, near@5, book@5, answered@5 (Haiku judge, blind to the target). `CONFIGS["hybrid"]` must match the library's default search. Eval spend is logged separately in `data/evals/usage.jsonl`. Baseline (2026-11-23, 123 questions): hybrid hit@5 0.88, hit@10 0.92, MRR 0.76. Decide changes on dev, look at test once.
 - API key: `ANTHROPIC_API_KEY` env var or the project `.env` (gitignored). Never print it.
+
+## Adding a book
+
+The user adds it in Calibre and copies the library over `books/`. Then `books build NEW_ID --yes` (it stops a running server), then `books eval run` (check for regressions), `books skill` (update the book list) and `books serve`. Inside `build`, the order is catalog → extract → figure notes → chunk → index → chapter cards → book cards → concept map. The order matters: figure notes go into chunks, and cards read chunks. Leave the eval set frozen, unless a new baseline is wanted.
 
 ## Rules
 

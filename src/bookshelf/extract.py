@@ -110,10 +110,17 @@ def _sha256(path: Path) -> str:
     return h.hexdigest()
 
 
+_EBOOK_CONVERT_PATHS = (  # Calibre's default install locations, for when it isn't on PATH
+    r"C:\Program Files\Calibre2\ebook-convert.exe",
+    "/Applications/calibre.app/Contents/MacOS/ebook-convert",
+    "/opt/calibre/ebook-convert",
+)
+
+
 def _ebook_convert() -> str:
-    exe = shutil.which("ebook-convert") or r"C:\Program Files\Calibre2\ebook-convert.exe"
-    if not Path(exe).exists() and not shutil.which(exe):
-        raise RuntimeError("Calibre's ebook-convert not found; install Calibre or add it to PATH")
+    exe = shutil.which("ebook-convert") or next((p for p in _EBOOK_CONVERT_PATHS if Path(p).exists()), None)
+    if not exe:
+        raise RuntimeError("Calibre's ebook-convert not found (needed for MOBI/AZW3): install Calibre or add it to PATH")
     return exe
 
 

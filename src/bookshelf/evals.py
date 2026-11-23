@@ -62,9 +62,8 @@ QUESTION_VERSION = 2  # v1: shared seed, dropped all blockquotes, allowed "this 
 
 # ---------------------------------------------------------------- 1. test set
 
-SYSTEM = ("You write and grade test questions for evaluating a search engine over a personal library "
-          "of 24 books (economics, finance, systems thinking, China, technology, history, literature; "
-          "two books are in Portuguese). Follow the instructions exactly and answer only with the JSON asked for.")
+SYSTEM = ("You write and grade test questions for evaluating a search engine over a personal library of books, "
+          "some possibly not in English. Follow the instructions exactly and answer only with the JSON asked for.")
 
 STYLE_RULES = {
     "lookup": "Ask about a specific fact, claim, event or example in the passage. You MAY use its names, "
@@ -72,7 +71,7 @@ STYLE_RULES = {
     "paraphrase": "Ask about the passage's main idea in your own everyday words. Do NOT reuse its distinctive "
                   "words, names, terms or phrases; describe them instead. The question must still have this "
                   "passage as a good answer.",
-    "crosslang": "The passage is in Portuguese. Write the question in ENGLISH, about its main idea, in your own "
+    "crosslang": "The passage is not in English. Write the question in ENGLISH, about its main idea, in your own "
                  "words (don't just translate a sentence).",
 }
 
@@ -82,7 +81,7 @@ Chapter: {chapter}
 PASSAGE:
 {text}
 
-Write ONE question that a reader of this library might type into a search box, and that this passage answers well.
+Write ONE question that a reader of this library (about {n_books} books) might type into a search box, and that this passage answers well.
 Style: {style}. {rule}
 Rules:
 - It must make sense on its own, to someone who has not seen the passage: never say "the passage", "this text",
@@ -90,16 +89,16 @@ Rules:
   protagonist" or "the country" without saying which: name the person, company, place or topic instead.
 - Do not name the book or its author.
 - One sentence, under 25 words.
-- "language": the question's language: "en" or "pt". Use Portuguese only if the style allows it and the passage is in Portuguese.
+- "language": the question's ISO 639-1 code ("en", "pt", ...). Use the passage's language only if the style allows it.
 Also return:
 - "answer": the answer, in one short sentence, as the passage gives it.
-- "specificity": "specific" if this passage would be among the few best answers in a 24-book library;
+- "specificity": "specific" if this passage would be among the few best answers in the whole library;
   "generic" if many passages in many books would answer it equally well.
 - "usable": false if the passage has no answerable content (a list of names, a table of contents, a bare transition)."""
 
 QUESTION_SCHEMA = en._obj({
     "question": en._STR,
-    "language": {"type": "string", "enum": ["en", "pt"]},
+    "language": en._STR,
     "answer": en._STR,
     "specificity": {"type": "string", "enum": ["specific", "generic"]},
     "usable": {"type": "boolean"},
@@ -142,7 +141,7 @@ def sample_passages() -> list[dict]:
         if not chunks:
             continue
         lang = (b["languages"] or ["eng"])[0]
-        styles = ["crosslang", "lookup"] if lang == "por" else ["paraphrase", "lookup"]
+        styles = ["paraphrase", "lookup"] if lang in ("eng", "en") else ["crosslang", "lookup"]
         for i, c in enumerate(rng.sample(chunks, min(N_PER_BOOK, len(chunks)))):
             out.append({"chunk": c["id"], "book": b["id"], "title": b["title"], "authors": b["authors"],
                         "chapter": " > ".join(c["path"]), "lang": lang, "style": styles[i % 2],
@@ -195,8 +194,10 @@ def build_questions(send: bool = False, progress=None) -> dict:
     est = en._cost(int(words * 1.6) + 450 * len(todo), 250 * len(todo), "now")
     if not send or not todo:
         return {"pending": len(todo), "estimated_usd": round(est, 3)}
+    n_books = round(len({p["book"] for p in sample_passages()}), -1) or 10
     reqs = [{"key": p["chunk"], "max_tokens": 1500, "schema": QUESTION_SCHEMA,
-             "task": QUESTION_TASK.format(title=p["title"], authors=", ".join(p["authors"]), chapter=p["chapter"],
+             "task": QUESTION_TASK.format(n_books=n_books, title=p["title"], authors=", ".join(p["authors"]),
+                                          chapter=p["chapter"],
                                           text=p["text"], style=p["style"], rule=STYLE_RULES[p["style"]])}
             for p in todo]
     res = _ask(reqs, "question", progress=progress)

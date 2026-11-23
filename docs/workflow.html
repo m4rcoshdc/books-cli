@@ -254,6 +254,82 @@ table.cmp td.tests { color: var(--muted); font-size: 13px; }
   <div class="book-detail" id="detail"></div>
 </section>
 
+<section aria-labelledby="use-h">
+  <div class="section-head">
+    <div class="eyebrow">After the build</div>
+    <h2 id="use-h">In use: real questions</h2>
+  </div>
+  <p style="color:var(--muted);max-width:780px">Each test is a question you actually asked, answered by Claude through the <code>books</code> skill with citations. Real questions find problems that synthetic evals miss: both fixes below came from them.</p>
+  <div class="table-scroll"><table class="cmp">
+    <thead><tr><th>Question</th><th>How it went</th><th>What it exposed</th><th>Fix</th></tr></thead>
+    <tbody>
+      <tr><td>Munger's Coca-Cola thought experiment (<i>Poor Charlie's Almanack</i>)</td>
+        <td class="tests">6 commands, keyword search only. Talk Four found on the first search; the chapter card mapped the talk to passages 001–011.</td>
+        <td class="tests">The talk's one-line summary described a different talk. Haiku had misnumbered 127 of 549 book-card entries across 9 books. Editors' sidebars (a Pavlov biography, pull-quotes) sit inside the speech text.</td>
+        <td class="tests">One-liners come from chapter cards first; a book-card line is used only when its title matches the real section.</td></tr>
+      <tr><td>What made Standard Oil stand out (<i>Engines That Move Markets</i>)</td>
+        <td class="tests">4 commands. Sections 75, 76 and the chapter's Conclusions gave the full argument: freight rebates, a cash reserve, consolidation, pipelines.</td>
+        <td class="tests">A one-liner stopped at “This section traces how John D.”: the sentence splitter took an initial for a full stop.</td>
+        <td class="tests">Initials and abbreviations (Dr., U.S., Inc.) no longer end a sentence.</td></tr>
+      <tr><td>Did each Engines winner (canals to counting machines) play Hardball?</td>
+        <td class="tests">Two books, 8 chapters, about 25 passages. Each chapter's “Conclusions” gave Nairn's own verdict; Hardball's chapter titles gave the strategies.</td>
+        <td class="tests">Cross-book synthesis works. The matches are the agent's interpretation, and Hardball's strategy summaries came from machine-written cards.</td>
+        <td class="tests">None needed. Lesson: for “what does the author conclude”, a chapter's Conclusions section is the best entry point.</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section aria-labelledby="next-h">
+  <div class="two">
+    <div style="display:grid;gap:16px;align-content:start">
+      <div class="section-head">
+        <div class="eyebrow">Ideas, each with its test</div>
+        <h2 id="next-h">Possible improvements</h2>
+      </div>
+      <div class="table-scroll"><table>
+        <thead><tr><th>Idea</th><th>Why</th><th>How to measure it</th></tr></thead>
+        <tbody>
+          <tr><td>Your own questions</td><td>10–15 questions you'd really ask. Synthetic ones are cleaner than real life.</td><td>New eval set; compare with the synthetic baseline.</td></tr>
+          <tr><td>Cross-book eval</td><td>The eval only has single-answer questions, so it couldn't see what the per-book cap is for.</td><td>Questions with several target books; score how many books appear in the top 10.</td></tr>
+          <tr><td>Answer eval</td><td>Today we measure finding passages, not answering. Do the agent's citations exist and support each claim?</td><td>Run the skill on ~20 questions; a judge checks every cited id against the claim.</td></tr>
+          <tr><td>More cross-language</td><td>Only 5 questions test English → Portuguese.</td><td>Add ~15; the eval result is a hint until then.</td></tr>
+          <tr><td>Fusion for paraphrase</td><td>On paraphrased questions, meaning search alone (80%) beats hybrid (77%).</td><td>Try on dev, confirm once on test; keep only if nothing breaks.</td></tr>
+          <tr><td>Reranker</td><td>A second model that re-scores the top 50 is the classic next step in search quality.</td><td><code>books eval run</code>: hit@1 and MRR should rise.</td></tr>
+          <tr><td>Rebuild book cards</td><td>Their chapter numbering is unreliable (127 of 549 wrong).</td><td>Give Haiku the real section numbers; check 100% match against book.json.</td></tr>
+          <tr><td>Flag sidebars</td><td>Editors' boxes inside Munger's speeches could be quoted as his words.</td><td>Spot-check quotes in the Munger answers.</td></tr>
+          <tr><td>Unwrap blockquotes</td><td>Cybernetic Revolutionaries' whole text is a blockquote.</td><td>Re-extract that book; eval should not change.</td></tr>
+          <tr><td>✓ One-command build</td><td>Done: <code>books build</code> runs every stage (free without <code>--yes</code>), so forks and new books need one command.</td><td>A fresh build of 2 books into an empty data folder matched the manual steps; a re-run of all 24 changed nothing.</td></tr>
+          <tr><td>Test on macOS and Linux</td><td>Paths and the PyTorch pin are fixed for them, but untested.</td><td>A fresh fork builds and searches on each.</td></tr>
+          <tr><td>MCP layer</td><td>Only needed to use the library in a chat without a shell (regular Claude Desktop).</td><td>The same answers through MCP as through the CLI.</td></tr>
+        </tbody>
+      </table></div>
+    </div>
+    <div style="display:grid;gap:16px;align-content:start">
+      <div class="section-head">
+        <div class="eyebrow">How to</div>
+        <h2>Add a book</h2>
+      </div>
+<div class="formula"># Add it in Calibre, then copy the Calibre library over books/
+uv run books build NEW_ID --yes         # every stage, in order; skips what's done
+uv run books eval run                   # check nothing got worse
+uv run books skill                      # update the skill's book list
+uv run books serve                      # warm search again</div>
+      <p style="font-size:13px;color:var(--muted)"><code>build</code> stops a running server, then runs catalog → extract → figure notes → chunk → index → chapter and book cards → concept map. Without <code>--yes</code> it skips the paid Haiku steps and prints their cost (roughly $0.05–0.15 per book). The eval set stays frozen. <code>books eval questions --yes</code> would add 6 questions for the new book, but that starts a new baseline.</p>
+      <div class="section-head">
+        <div class="eyebrow">How to</div>
+        <h2>Use it from another chat</h2>
+      </div>
+      <ul style="margin:0;padding-left:18px;display:grid;gap:6px;font-size:14px">
+        <li><b>Claude Code in this folder:</b> just ask. The skill loads itself when a question is about your books, or type <code>/books</code>.</li>
+        <li><b>Claude Code anywhere:</b> run <code>books skill --global</code> once. The skill's commands already point at this folder.</li>
+        <li><b>Someone else's library:</b> fork the repo and follow the README: <code>books build</code> (free), then <code>books build --yes</code> for the summaries, then <code>books skill</code>.</li>
+        <li><b>Meaning search:</b> run <code>books serve</code> first (about 30 s), or the agent falls back to keyword search and says so.</li>
+        <li><b>Regular Claude chat (no shell):</b> needs the MCP layer from the ideas list.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
 <section aria-labelledby="files-h">
   <div class="two">
     <div style="display:grid;gap:16px;align-content:start">
@@ -275,13 +351,19 @@ table.cmp td.tests { color: var(--muted); font-size: 13px; }
 │  ├─ index.py  embed.py   <span class="c">stage 3: search + bge-m3</span>
 │  ├─ enrich.py            <span class="c">stage 4: Haiku requests</span>
 │  ├─ concepts.py          <span class="c">stage 4: concept map</span>
+│  ├─ library.py           <span class="c">stage 5: the agent's tools</span>
+│  ├─ present.py           <span class="c">stage 5: compact text output</span>
+│  ├─ server.py            <span class="c">stage 5: keeps the model warm</span>
+│  ├─ evals.py             <span class="c">stage 6: test set + scoring</span>
 │  └─ cli.py               <span class="c">the `books` command</span>
+├─ .claude/skills/books/   <span class="c">generated by `books skill`</span>
+├─ README.md               <span class="c">setup guide for forks</span>
 ├─ scripts/                <span class="c">refreshes this page's numbers</span>
 ├─ docs/workflow.html      <span class="c">this page</span>
 └─ data/                   <span class="c">derived, gitignored</span>
    ├─ catalog.json
    ├─ index.sqlite         <span class="c">keyword + vector search</span>
-   ├─ evals/               <span class="c">search comparisons</span>
+   ├─ evals/               <span class="c">questions, verdicts, report</span>
    ├─ concepts.json        <span class="c">concept map across books</span>
    ├─ enrich/              <span class="c">usage + cost log</span>
    ├─ cache/epub/          <span class="c">converted MOBIs</span>
@@ -422,6 +504,8 @@ const STAGES = [
 ];
 
 const LOG = [
+  ["23 Nov 2026", "Made to be forked", "A README, one build command that's free without --yes, a skill generated for each person's library, and the tools no longer assume this machine or this library."],
+  ["23 Nov 2026", "Never trust an LLM's numbering", "Haiku misnumbered 127 of 549 chapters in its book cards. Anything keyed on a number an LLM produced is checked against book.json first."],
   ["23 Nov 2026", "Decide on dev, confirm on test, keep it simple", "The per-book cap was dropped because it broke nothing when removed and fixed answers. The semantic weighting was rejected: its dev gain was within noise and vanished on test."],
   ["23 Nov 2026", "Synthetic questions, with checks", "Haiku wrote the questions ($0.06) and judged the results ($0.12). Both were checked: questions by reading them and a lint rule, the judge by its verdicts on the known answers."],
   ["23 Nov 2026", "CLI + skill, no MCP (yet)", "Claude Code has a shell, so the CLI plus a skill reaches it fully, and a skill costs no context until used. MCP waits until the library is wanted in an app without a shell."],

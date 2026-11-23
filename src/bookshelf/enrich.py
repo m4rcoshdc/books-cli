@@ -57,7 +57,9 @@ def client():
     if not os.environ.get("ANTHROPIC_API_KEY"):
         env = PROJECT_ROOT / ".env"
         if env.exists():
-            for line in env.read_text(encoding="utf-8").splitlines():
+            raw = env.read_bytes()  # PowerShell's `>` writes UTF-16; Set-Content -Encoding utf8 adds a BOM
+            text = raw.decode("utf-16") if raw[:2] in (b"\xff\xfe", b"\xfe\xff") else raw.decode("utf-8-sig")
+            for line in text.splitlines():
                 key, _, value = line.partition("=")
                 if key.strip() == "ANTHROPIC_API_KEY" and value.strip():
                     os.environ["ANTHROPIC_API_KEY"] = value.strip().strip('"').strip("'")

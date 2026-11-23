@@ -10,3 +10,8 @@ __pycache__/
 
 # The Calibre library itself (source of truth lives in Calibre).
 /books/
+
+# Generated per person by `books skill` (contains this machine's path and library).
+/.claude/skills/books/SKILL.md
+# Claude Code's local settings.
+/.claude/settings.local.json

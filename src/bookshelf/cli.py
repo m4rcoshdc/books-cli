@@ -18,6 +18,106 @@ for stream in (sys.stdout, sys.stderr):
 
 
 @app.command()
+def build(
+    books: list[str] = typer.Argument(None, help="Book ids (default: the whole library)"),
+    yes: bool = typer.Option(False, "--yes", help="Also run the paid Haiku steps (figures, chapter and book cards)"),
+    no_embed: bool = typer.Option(False, "--no-embed", help="Keyword search only: skip the bge-m3 model"),
+):
+    """The whole pipeline in one go. Re-runs only redo what changed.
+
+    Free:            catalog -> extract -> chunk -> index (keyword + meaning search)
+    With --yes:      + figure descriptions, chapter and book cards (Claude Haiku), concept map
+    Add a new book:  books build NEW_ID --yes"""
+    from . import enrich as en
+    from . import index as ix
+    from . import library as lib
+    from . import server
+
+    def step(title):
+        typer.secho(f"\n== {title}", bold=True)
+
+    restart = lib.server_up()
+    if restart:
+        typer.echo(f"Stopping the search server so its data can change: {server.stop()}")
+
+    step("catalog")
+    catalog_books = cat.build_catalog()
+    typer.echo(f"{len(catalog_books)} books in {cat.LIBRARY}")
+    try:
+        targets = [cat.find_book(b) for b in books] if books else catalog_books
+    except KeyError as e:
+        raise typer.BadParameter(f"no book {e} in the catalog; `books list` shows the ids") from None
+
+    step("extract")
+    for book in targets:
+        r = ex.extract_book(book)
+        typer.echo(f"  {book['id']:<45} {r.status:<9}" + (f" {r.error}" if r.status == "failed" else ""))
+    ids = [b["id"] for b in targets if ex.load_manifest(b["id"])]
+
+    def paid(kind):
+        items = en.pending(kind, ids)
+        usd = en.estimate(items)["usd_batch"] * 2
+        if not items:
+            typer.echo(f"  {kind}: nothing pending")
+            return 0.0
+        if not yes:
+            typer.echo(f"  {kind}: {len(items)} requests, ~${usd:.2f} (skipped: add --yes)")
+            return usd
+        typer.echo(f"  {kind}: {len(items)} requests, ~${usd:.2f}")
+        r = en.run_now(items, progress=lambda d, t, c: typer.echo(f"\r    {d}/{t}  ${c:.3f}   ", nl=False))
+        typer.echo(f"\n    {r['succeeded']} stored, {len(r['failed'])} failed, ${r['usd']:.3f}")
+        return 0.0
+
+    step("figure descriptions (Haiku)")
+    pending_usd = paid("figure")
+
+    step("chunk")
+    for book_id in ids:
+        r = ch.chunk_book(book_id)
+        typer.echo(f"  {book_id:<45} {r['status']:<8} {r['chunks']:>5} passages")
+
+    step("index")
+    try:
+        stats = ix.build(embeddings=not no_embed, progress=lambda d, t, s: typer.echo(
+            f"\r  embedded {d:,}/{t:,}  {d / s if s else 0:.1f}/s   ", nl=False))
+    except Exception as exc:  # usually the model isn't downloaded yet
+        typer.secho(f"\n  Meaning-search index failed: {type(exc).__name__}: {str(exc)[:200]}\n"
+                    "  Download the model with `uv run python scripts/download_model.py`, "
+                    "or run with --no-embed for keyword search only.", fg="red")
+        raise typer.Exit(1)
+    typer.echo(f"\n  {stats}")
+
+    step("chapter and book cards (Haiku)")
+    pending_usd += paid("chapter")
+    pending_usd += paid("book")
+
+    if yes and not no_embed:
+        from . import concepts as cm
+
+        step("concept map")
+        typer.echo(f"  {cm.build()}")
+
+    step("done")
+    if pending_usd:
+        typer.echo(f"Search works now. The Haiku steps would cost ~${pending_usd:.2f}: re-run with --yes to add them.")
+    typer.echo("Next: `books skill` (teach Claude Code the commands), `books serve` (fast meaning search)"
+               + (", and restart the server you had running." if restart else "."))
+
+
+@app.command()
+def skill(global_: bool = typer.Option(False, "--global", help="Also install for every Claude Code session"),
+          show: bool = typer.Option(False, "--print", help="Print the skill instead of writing it")):
+    """Write the Claude Code skill for this library (its books, this folder's path)."""
+    from . import skill as sk
+
+    if show:
+        typer.echo(sk.render())
+        return
+    for path in sk.install(global_):
+        typer.echo(f"wrote {path}")
+
+
+@app.command()
 def catalog():
     """Phase 0: read Calibre's metadata.db into data/catalog.json."""
     books = cat.build_catalog()

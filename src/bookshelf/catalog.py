@@ -158,8 +158,10 @@ def apply_overrides(books: list[dict]) -> list[dict]:
     overrides = json.loads(OVERRIDES_FILE.read_text(encoding="utf-8"))
     known = {b["id"] for b in books}
     unknown = [k for k in overrides if not k.startswith("_") and k not in known]
-    if unknown:
-        raise ValueError(f"metadata_overrides.json has unknown book ids: {unknown}")
+    if unknown:  # a typo, or a fork still carrying someone else's fixes: say so, don't fail
+        import sys
+
+        print(f"metadata_overrides.json: ignoring ids not in this library: {', '.join(unknown)}", file=sys.stderr)
     for b in books:
         fix = overrides.get(b["id"], {})
         b.update(fix)

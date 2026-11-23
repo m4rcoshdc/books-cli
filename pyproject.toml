@@ -2,6 +2,8 @@
 name = "bookshelf"
 version = "0.1.0"
 description = "Turn a Calibre library into a searchable, agent-friendly knowledge layer."
+license = "MIT"
+readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "beautifulsoup4>=4.12",
@@ -22,10 +24,11 @@ books = "bookshelf.cli:app"
 # Hard links from uv's cache fail here with os error 396 (OneDrive cloud files).
 link-mode = "copy"
 
-# GPU build of PyTorch (RTX 3050 Ti, driver supports CUDA 13.5).
-# To go back to CPU-only, delete these two blocks and run `uv sync`.
+# PyTorch: the CUDA build on Windows and Linux (embeds ~20x faster on an NVIDIA GPU,
+# and still runs on CPU without one); the regular build on macOS (no CUDA there).
+# No NVIDIA GPU and want a much smaller install? Delete these two blocks and run `uv sync`.
 [tool.uv.sources]
-torch = [{ index = "pytorch-cu132" }]
+torch = [{ index = "pytorch-cu132", marker = "sys_platform != 'darwin'" }]
 
 [[tool.uv.index]]
 name = "pytorch-cu132"
