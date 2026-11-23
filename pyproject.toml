@@ -1,0 +1,40 @@
+[project]
+name = "bookshelf"
+version = "0.1.0"
+description = "Turn a Calibre library into a searchable, agent-friendly knowledge layer."
+requires-python = ">=3.12"
+dependencies = [
+    "beautifulsoup4>=4.12",
+    "lxml>=5.0",
+    "markdownify>=0.13",
+    "pymupdf>=2.1",
+    "sentence-transformers>=6.3.0",
+    "sqlite-vec>=0.1.9",
+    "typer>=0.12",
+    "torch>=2.15",  # direct so [tool.uv.sources] can point it at the CUDA index
+    "anthropic>=2.12.0",
+]
+
+[project.scripts]
+books = "bookshelf.cli:app"
+
+[tool.uv]
+# Hard links from uv's cache fail here with os error 396 (OneDrive cloud files).
+link-mode = "copy"
+
+# GPU build of PyTorch (RTX 3050 Ti, driver supports CUDA 13.5).
+# To go back to CPU-only, delete these two blocks and run `uv sync`.
+[tool.uv.sources]
+torch = [{ index = "pytorch-cu132" }]
+
+[[tool.uv.index]]
+name = "pytorch-cu132"
+url = "https://download.pytorch.org/whl/cu132"
+explicit = true
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/bookshelf"]

@@ -1,0 +1,12 @@
+﻿# Secrets: the Anthropic API key lives here, never in git.
+.env
+
+.venv/
+__pycache__/
+*.pyc
+
+# Derived book text stays local: it is the full text of purchased books.
+/data/
+
+# The Calibre library itself (source of truth lives in Calibre).
+/books/

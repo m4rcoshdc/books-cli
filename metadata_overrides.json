@@ -1,0 +1,29 @@
+{
+  "_comment": "Hand-curated metadata fixes, keyed by book id. Any catalog field set here replaces the value read from books/metadata.db.",
+  "the-hard-thing-about-hard-things": {
+    "authors": ["Ben Horowitz"]
+  },
+  "thinking-in-systems": {
+    "authors": ["Donella H. Meadows"]
+  },
+  "technological-revolutions-and-financial-capital": {
+    "title": "Technological Revolutions and Financial Capital: The Dynamics of Bubbles and Golden Ages",
+    "authors": ["Carlota Perez"],
+    "languages": ["eng"]
+  },
+  "the-disappearance-of-rituals": {
+    "languages": ["eng"]
+  },
+  "the-sailor-who-fell-from-grace": {
+    "authors": ["Yukio Mishima"]
+  },
+  "a-lanterna-na-popa-memorias-vol": {
+    "title": "A Lanterna na Popa: Memórias, Vol. 1",
+    "authors": ["Roberto Campos"],
+    "languages": ["por"],
+    "pubdate": "1994-01-01"
+  },
+  "o-livro-do-desassossego": {
+    "languages": ["por"]
+  }
+}

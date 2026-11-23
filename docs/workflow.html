@@ -1,0 +1,603 @@
+<title>Books-Analyser Pipeline</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: a single reading column; the pipeline rail on top, stage detail cards below, then the book shelf and the decision log. */
+:root {
+  --bg: #f4f6f8;
+  --surface: #ffffff;
+  --ink: #18202b;
+  --muted: #5b6676;
+  --line: #dde2e8;
+  --accent: #1f5f8b;
+  --accent-soft: #e3eef6;
+  --epub: #2a8a7e;
+  --mobi: #c4862a;
+  --pdf: #8a4f9e;
+  --front: #b7c0cc;
+  --back: #8995a6;
+  --done: #2f8a55;
+  --done-soft: #e2f3e8;
+  --next: #1f5f8b;
+  --next-soft: #e3eef6;
+  --planned: #7d8794;
+  --planned-soft: #eceff3;
+  --warn: #a8661a;
+  --warn-soft: #fbf0df;
+  --code-bg: #eef1f5;
+  --display: "Space Grotesk", "Segoe UI", system-ui, sans-serif;
+  --body: "Inter", "Segoe UI", system-ui, sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, "Cascadia Code", Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #11161d; --surface: #19202a; --ink: #e6ebf1; --muted: #9aa6b5; --line: #2a3441;
+    --accent: #7db4dc; --accent-soft: #1c2e3e;
+    --epub: #4fb8a9; --mobi: #e0a54a; --pdf: #b98bcb; --front: #4a5565; --back: #6b788a;
+    --done: #5cc285; --done-soft: #17301f; --next: #7db4dc; --next-soft: #1c2e3e;
+    --planned: #8994a2; --planned-soft: #212a35; --warn: #e3a957; --warn-soft: #34281a;
+    --code-bg: #212a35; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #11161d; --surface: #19202a; --ink: #e6ebf1; --muted: #9aa6b5; --line: #2a3441;
+  --accent: #7db4dc; --accent-soft: #1c2e3e;
+  --epub: #4fb8a9; --mobi: #e0a54a; --pdf: #b98bcb; --front: #4a5565; --back: #6b788a;
+  --done: #5cc285; --done-soft: #17301f; --next: #7db4dc; --next-soft: #1c2e3e;
+  --planned: #8994a2; --planned-soft: #212a35; --warn: #e3a957; --warn-soft: #34281a;
+  --code-bg: #212a35; color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+body {
+  background: var(--bg); color: var(--ink); font-family: var(--body);
+  font-size: 15px; line-height: 1.6;
+}
+.wrap {
+  max-width: 1080px; margin: 0 auto;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 40px 72px;
+  display: grid; gap: 56px;
+}
+h1, h2, h3 { font-family: var(--display); line-height: 1.2; text-wrap: balance; margin: 0; }
+h1 { font-size: clamp(30px, 5vw, 44px); font-weight: 700; letter-spacing: -0.02em; }
+h2 { font-size: 24px; font-weight: 600; letter-spacing: -0.01em; }
+h3 { font-size: 18px; font-weight: 600; }
+p { margin: 0; }
+code, .mono { font-family: var(--mono); font-size: 0.86em; }
+code { background: var(--code-bg); padding: 1px 5px; border-radius: 4px; overflow-wrap: anywhere; }
+.eyebrow { font-family: var(--mono); font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
+.lede { color: var(--muted); max-width: 66ch; font-size: 16px; }
+section { display: grid; gap: 20px; min-width: 0; }
+.section-head { display: grid; gap: 6px; }
+
+/* header */
+header { display: grid; gap: 18px; }
+.stats { display: flex; flex-wrap: wrap; gap: 28px; padding-top: 6px; }
+.stat { display: grid; gap: 0; }
+.stat b { font-family: var(--display); font-size: 28px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.stat span { font-size: 13px; color: var(--muted); }
+
+/* pipeline rail */
+.rail-scroll { overflow-x: auto; padding-bottom: 6px; }
+.rail { display: grid; grid-template-columns: repeat(7, minmax(118px, 1fr)); min-width: 840px; position: relative; }
+.rail::before { content: ""; position: absolute; left: 30px; right: 30px; top: 15px; height: 2px; background: var(--line); }
+.rail .progress { position: absolute; left: 30px; top: 15px; height: 2px; background: var(--done); }
+.node { position: relative; display: grid; gap: 8px; justify-items: start; padding-right: 10px; background: none; border: 0; text-align: left; color: inherit; font: inherit; cursor: pointer; padding-left: 0; }
+.node:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; border-radius: 6px; }
+.dot { width: 32px; height: 32px; border-radius: 50%; display: grid; place-items: center; font-family: var(--mono); font-size: 13px; font-weight: 500; border: 2px solid var(--line); background: var(--surface); color: var(--muted); position: relative; z-index: 1; }
+.node[data-status="done"] .dot { background: var(--done); border-color: var(--done); color: var(--surface); }
+.node[data-status="next"] .dot { border-color: var(--next); color: var(--next); box-shadow: 0 0 0 4px var(--next-soft); }
+.node .name { font-family: var(--display); font-weight: 600; font-size: 15px; }
+.node .what { font-size: 12.5px; color: var(--muted); line-height: 1.4; }
+.node[aria-current="true"] .name { color: var(--accent); text-decoration: underline; text-underline-offset: 4px; }
+.legend { display: flex; flex-wrap: wrap; gap: 8px 18px; font-size: 13px; color: var(--muted); }
+.legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 6px; vertical-align: 0; }
+
+.pill { display: inline-flex; align-items: center; gap: 6px; font-family: var(--mono); font-size: 11.5px; padding: 2px 8px; border-radius: 999px; white-space: nowrap; }
+.pill.done { background: var(--done-soft); color: var(--done); }
+.pill.next { background: var(--next-soft); color: var(--next); }
+.pill.planned { background: var(--planned-soft); color: var(--planned); }
+.pill.kind { background: var(--code-bg); color: var(--muted); }
+
+/* stage detail */
+.stage { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 24px; display: grid; gap: 20px; min-width: 0; }
+.stage-top { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; }
+.stage-top h3 { font-size: 22px; margin-right: auto; }
+.flow { display: grid; grid-template-columns: 1fr auto 1.4fr auto 1fr; gap: 12px; align-items: stretch; }
+.flow .box { border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; display: grid; gap: 6px; align-content: start; min-width: 0; }
+.flow .box ul { margin: 0; padding-left: 18px; display: grid; gap: 4px; font-size: 14px; }
+.flow .arrow { align-self: center; color: var(--muted); font-family: var(--mono); }
+.flow .box.process { background: var(--accent-soft); border-color: transparent; }
+.cmd { display: flex; flex-wrap: wrap; gap: 8px; }
+.cmd code { font-size: 13px; padding: 4px 8px; }
+.lessons { display: grid; gap: 10px; }
+.table-scroll { overflow-x: auto; border: 1px solid var(--line); border-radius: 8px; }
+table { border-collapse: collapse; width: 100%; font-size: 14px; }
+th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font-family: var(--mono); font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); font-weight: 500; background: var(--bg); }
+tr:last-child td { border-bottom: 0; }
+td:first-child { font-weight: 600; white-space: nowrap; }
+.learn { display: flex; gap: 10px; align-items: baseline; font-size: 14px; color: var(--muted); }
+.learn b { color: var(--ink); font-weight: 600; white-space: nowrap; }
+.hist { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 8px; align-items: end; max-width: 560px; }
+.hcol { display: grid; gap: 4px; justify-items: center; font-variant-numeric: tabular-nums; }
+.hbar { width: 100%; background: var(--front); border-radius: 3px 3px 0 0; }
+.hbar.target { background: var(--accent); }
+.hval { font-size: 11.5px; color: var(--muted); }
+.hlbl { font-family: var(--mono); font-size: 11px; color: var(--muted); }
+.kpis { display: flex; flex-wrap: wrap; gap: 24px; }
+.kpis div { display: grid; }
+.kpis b { font-family: var(--display); font-size: 24px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.kpis span { font-size: 12.5px; color: var(--muted); }
+.cand { grid-template-columns: 100px 1fr 40px; }
+.concept { display: grid; gap: 1px; font-size: 13.5px; padding-bottom: 6px; border-bottom: 1px solid var(--line); }
+.concept span { color: var(--muted); font-size: 12.5px; }
+.card-note { font-size: 14px; display: grid; gap: 4px; }
+.card-note ul { margin: 0; padding-left: 18px; color: var(--muted); font-size: 13px; }
+table.cmp td:first-child { white-space: normal; font-weight: 500; min-width: 220px; }
+table.cmp td, table.cmp th { text-align: left; }
+table.cmp td.tests { color: var(--muted); font-size: 13px; }
+.tot { font-family: var(--display); font-size: 15px; color: var(--ink); letter-spacing: 0; text-transform: none; }
+.rk { display: inline-block; min-width: 44px; text-align: center; font-family: var(--mono); font-size: 12px; padding: 2px 8px; border-radius: 999px; }
+.rk.hit { background: var(--done-soft); color: var(--done); }
+.rk.near { background: var(--warn-soft); color: var(--warn); }
+.rk.miss { background: var(--planned-soft); color: var(--planned); text-decoration: line-through; }
+.formula { font-family: var(--mono); font-size: 13px; background: var(--code-bg); border-radius: 8px; padding: 14px 16px; overflow-x: auto; white-space: pre; line-height: 1.7; }
+
+/* shelf */
+.controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.controls span { font-size: 13px; color: var(--muted); margin-right: 4px; }
+.seg { border: 1px solid var(--line); background: var(--surface); color: var(--ink); padding: 5px 12px; border-radius: 999px; font: 500 13px var(--body); cursor: pointer; }
+.seg[aria-pressed="true"] { background: var(--ink); color: var(--surface); border-color: var(--ink); }
+.seg:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.shelf { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 3px; padding: 18px 14px 0; background: var(--surface); border: 1px solid var(--line); border-radius: 10px 10px 0 0; border-bottom: 0; }
+.plank { height: 10px; background: var(--line); border-radius: 0 0 6px 6px; margin-top: -1px; }
+.spine { height: 210px; border: 0; border-radius: 3px 3px 0 0; cursor: pointer; padding: 10px 0; display: flex; justify-content: center; align-items: flex-start; color: #fff; position: relative; overflow: hidden; margin-bottom: 0; }
+.spine[data-fmt="EPUB"] { background: var(--epub); }
+.spine[data-fmt="MOBI"] { background: var(--mobi); }
+.spine[data-fmt="PDF"] { background: var(--pdf); }
+.spine .lbl { writing-mode: vertical-rl; transform: rotate(180deg); font-family: var(--display); font-weight: 600; font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-height: 170px; color: var(--bg); }
+.spine .band { position: absolute; left: 0; right: 0; bottom: 0; height: 6px; background: var(--bg); opacity: 0.35; }
+.spine[aria-pressed="true"] { outline: 3px solid var(--ink); outline-offset: 2px; z-index: 1; }
+.spine:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+.spine.low { box-shadow: inset 0 -6px 0 var(--warn); }
+.book-detail { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 22px; display: grid; gap: 18px; grid-template-columns: 1.1fr 1fr; }
+.book-detail > div { display: grid; gap: 14px; align-content: start; min-width: 0; }
+.kv { display: grid; grid-template-columns: auto 1fr; gap: 6px 16px; font-size: 14px; }
+.kv dt { color: var(--muted); }
+.kv dd { margin: 0; font-variant-numeric: tabular-nums; min-width: 0; overflow-wrap: anywhere; }
+.stack { display: flex; height: 14px; border-radius: 4px; overflow: hidden; background: var(--code-bg); }
+.stack i { display: block; height: 100%; }
+.cand { display: grid; grid-template-columns: 46px 1fr 44px; gap: 10px; align-items: center; font-size: 13px; font-variant-numeric: tabular-nums; }
+.cand .bar { height: 10px; background: var(--code-bg); border-radius: 3px; overflow: hidden; }
+.cand .bar i { display: block; height: 100%; border-radius: 3px; }
+.cand.win { font-weight: 600; }
+.note { font-size: 13px; padding: 8px 10px; border-radius: 6px; background: var(--warn-soft); color: var(--warn); }
+.note.fixed { background: var(--accent-soft); color: var(--accent); }
+
+/* tree + log */
+.two { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+.two > * { min-width: 0; }
+.tree { font-family: var(--mono); font-size: 13px; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 18px; overflow-x: auto; white-space: pre; line-height: 1.75; }
+.tree .c { color: var(--muted); }
+.log { display: grid; gap: 0; border-left: 2px solid var(--line); margin-left: 6px; }
+.log-item { position: relative; padding: 0 0 18px 20px; display: grid; gap: 3px; }
+.log-item::before { content: ""; position: absolute; left: -7px; top: 6px; width: 12px; height: 12px; border-radius: 50%; background: var(--surface); border: 2px solid var(--accent); }
+.log-item time { font-family: var(--mono); font-size: 12px; color: var(--muted); }
+.log-item b { font-weight: 600; }
+.log-item p { font-size: 14px; color: var(--muted); }
+
+@media (max-width: 760px) {
+  .flow { grid-template-columns: 1fr; }
+  .flow .arrow { transform: rotate(90deg); justify-self: center; }
+  .book-detail, .two { grid-template-columns: 1fr; }
+  .stage { padding: 18px; }
+  .spine { height: 170px; }
+  .spine .lbl { max-height: 130px; }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .spine { transition: transform .15s ease; }
+  .spine:hover { transform: translateY(-4px); }
+}
+</style>
+
+<div class="wrap">
+
+<header>
+  <div class="eyebrow">Learning project · updated 22 Nov 2026</div>
+  <h1>Books-Analyser Pipeline</h1>
+  <p class="lede">Turning a Kindle/Calibre library into a knowledge layer that agents can search, read and cite. Each stage writes plain files you can open and check. Plain code does the predictable work first, and an LLM is added only where it earns its cost.</p>
+  <div class="stats" id="stats"></div>
+</header>
+
+<section aria-labelledby="pipe-h">
+  <div class="section-head">
+    <div class="eyebrow">The workflow</div>
+    <h2 id="pipe-h">Eight stages, each building on the last</h2>
+  </div>
+  <div class="rail-scroll"><div class="rail" id="rail"></div></div>
+  <div class="legend">
+    <span><i style="background:var(--done)"></i>Done</span>
+    <span><i style="background:var(--next)"></i>Next up</span>
+    <span><i style="background:var(--planned-soft);border:1px solid var(--planned)"></i>Planned</span>
+    <span>Select a stage to read what it does.</span>
+  </div>
+  <div id="stage"></div>
+</section>
+
+<section aria-labelledby="shelf-h">
+  <div class="section-head">
+    <div class="eyebrow">The library today</div>
+    <h2 id="shelf-h">The shelf</h2>
+    <p class="lede">Every extracted book. Spine width follows word count (square-root scale, so short books stay visible). Colour shows which file format won the structure score. An amber base marks a book that is worth checking by hand.</p>
+  </div>
+  <div class="controls" role="group" aria-label="Sort books">
+    <span>Sort</span>
+    <button class="seg" data-sort="author" aria-pressed="true">Author</button>
+    <button class="seg" data-sort="words" aria-pressed="false">Length</button>
+    <button class="seg" data-sort="score" aria-pressed="false">Structure score</button>
+    <button class="seg" data-sort="figs" aria-pressed="false">Figures</button>
+    <span style="margin-left:auto" class="legend">
+      <span><i style="background:var(--epub)"></i>EPUB</span>
+      <span><i style="background:var(--mobi)"></i>MOBI → EPUB</span>
+      <span><i style="background:var(--pdf)"></i>PDF</span>
+    </span>
+  </div>
+  <div>
+    <div class="shelf" id="shelf"></div>
+    <div class="plank"></div>
+  </div>
+  <div class="book-detail" id="detail"></div>
+</section>
+
+<section aria-labelledby="files-h">
+  <div class="two">
+    <div style="display:grid;gap:16px;align-content:start">
+      <div class="section-head">
+        <div class="eyebrow">Where things live</div>
+        <h2 id="files-h">Project layout</h2>
+      </div>
+<div class="tree">Books-Analyser/
+├─ books/                  <span class="c">static copy of Calibre (read-only)</span>
+│  └─ metadata.db
+├─ metadata_overrides.json <span class="c">hand fixes: authors, titles</span>
+├─ src/bookshelf/
+│  ├─ catalog.py           <span class="c">stage 0</span>
+│  ├─ epub.py  pdf.py      <span class="c">format readers</span>
+│  ├─ figures.py           <span class="c">images, captions, filters</span>
+│  ├─ mathml.py            <span class="c">equations to LaTeX</span>
+│  ├─ extract.py           <span class="c">stage 1 + scoring</span>
+│  ├─ chunk.py             <span class="c">stage 2</span>
+│  ├─ index.py  embed.py   <span class="c">stage 3: search + bge-m3</span>
+│  ├─ enrich.py            <span class="c">stage 4: Haiku requests</span>
+│  ├─ concepts.py          <span class="c">stage 4: concept map</span>
+│  └─ cli.py               <span class="c">the `books` command</span>
+├─ scripts/                <span class="c">refreshes this page's numbers</span>
+├─ docs/workflow.html      <span class="c">this page</span>
+└─ data/                   <span class="c">derived, gitignored</span>
+   ├─ catalog.json
+   ├─ index.sqlite         <span class="c">keyword + vector search</span>
+   ├─ evals/               <span class="c">search comparisons</span>
+   ├─ concepts.json        <span class="c">concept map across books</span>
+   ├─ enrich/              <span class="c">usage + cost log</span>
+   ├─ cache/epub/          <span class="c">converted MOBIs</span>
+   └─ books/&lt;id&gt;/
+      ├─ book.json         <span class="c">outline, scores, warnings</span>
+      ├─ sections/NNN-*.md <span class="c">one file per chapter</span>
+      ├─ figures/fig-NNN.* <span class="c">saved images</span>
+      ├─ figures.json      <span class="c">caption, chapter, page</span>
+      └─ chunks.jsonl      <span class="c">citable passages</span></div>
+    </div>
+    <div style="display:grid;gap:16px;align-content:start">
+      <div class="section-head">
+        <div class="eyebrow">Why it is built this way</div>
+        <h2>Decision log</h2>
+      </div>
+      <div class="log" id="log"></div>
+    </div>
+  </div>
+</section>
+
+</div>
+
+<script>
+// Hand-written notes per book. The BOOKS numbers below are generated by scripts/update_workflow_page.py.
+const NOTES = {
+  "a-lanterna-na-popa-memorias-vol": ["Scanned book: no PDF outline, so chapters were detected from OCR headings. No figures (pages are photos of text)."],
+  "cybernetics-second-edition": ["TOC had 1 entry; split on the book's own headings instead.", "Most figures are equations stored as SVG images; the vision step will transcribe them."],
+  "technological-revolutions-and-financial-capital": ["MOBI's TOC was page labels; the PDF outline was used instead.", "Figures are vector drawings: cut out as images, and their labels removed from the text."],
+  "the-disappearance-of-rituals": ["MOBI's TOC pointed at the endnotes; the PDF outline was used instead."],
+  "the-economics-of-over-the-counter": ["1,926 MathML equations converted to LaTeX; their duplicate PNG copies were dropped."],
+  "the-plains": ["Novel in three long parts: the score is low by design, not a defect."],
+  "the-temple-of-the-golden-pavilion": ["Source MOBI has OCR typos (“psyehiatrist”)."],
+  "napoleon-the-great": ["Plates and maps are captioned in a separate list of illustrations, not next to each image."],
+  "the-anarchy": ["Plates and maps are captioned in a separate list, not next to each image."]
+};
+/*ENRICH:START*/const ENRICH = {"spent":{"usd":1.96,"input_tokens":10303253,"output_tokens":1888560},"byKind":{"figure":{"requests":857,"usd":0.399},"chapter":{"requests":923,"usd":1.491},"book":{"requests":25,"usd":0.07}},"figureTypes":{"other":86,"chart":280,"diagram":104,"table":21,"photo":61,"map":36,"illustration":169,"decorative":24,"equation":76},"figures":857,"cards":923,"books":24,"crossBook":151,"topConcepts":[{"concept":"feedback loop","books":["cybernetic-revolutionaries","cybernetics-second-edition","making-sense-of-chaos","technological-revolutions-and-financial-capital","the-economics-of-over-the-counter","the-hard-thing-about-hard-things","thinking-in-systems"]},{"concept":"economies of scale","books":["engines-that-move-markets","hardball","making-sense-of-chaos","technological-revolutions-and-financial-capital"]},{"concept":"efficient market hypothesis","books":["capital-wars","making-sense-of-chaos","poor-charlies-almanack","the-man-who-solved-the-market"]},{"concept":"technocracy","books":["a-lanterna-na-popa-memorias-vol","breakneck","cybernetic-revolutionaries","thinking-in-systems"]},{"concept":"liquidity","books":["capital-wars","engines-that-move-markets","the-economics-of-over-the-counter","the-man-who-solved-the-market"]},{"concept":"solitude","books":["o-livro-do-desassossego","the-sailor-who-fell-from-grace","the-temple-of-the-golden-pavilion"]},{"concept":"creative destruction","books":["engines-that-move-markets","making-sense-of-chaos","technological-revolutions-and-financial-capital"]},{"concept":"propaganda","books":["engines-that-move-markets","napoleon-the-great","rubicon"]},{"concept":"rational expectations","books":["a-lanterna-na-popa-memorias-vol","making-sense-of-chaos","the-economics-of-over-the-counter"]},{"concept":"leverage","books":["making-sense-of-chaos","the-hard-thing-about-hard-things","the-man-who-solved-the-market"]}]};/*ENRICH:END*/
+/*COMPARE:START*/const COMPARE = {"top":5,"totals":{"keyword":9,"semantic":12,"hybrid":12},"results":[{"question":"Medallion fund fees","expected":"the-man-who-solved-the-market","tests":"exact names","modes":{"keyword":{"rank":1},"semantic":{"rank":1},"hybrid":{"rank":1}}},{"question":"Cybersyn operations room design","expected":"cybernetic-revolutionaries","tests":"exact names","modes":{"keyword":{"rank":1},"semantic":{"rank":1},"hybrid":{"rank":1}}},{"question":"\"invert, always invert\"","expected":"poor-charlies-almanack","tests":"exact quote","modes":{"keyword":{"rank":1},"semantic":{"rank":1},"hybrid":{"rank":1}}},{"question":"why do systems overshoot and oscillate","expected":"thinking-in-systems","tests":"shared words","modes":{"keyword":{"rank":1},"semantic":{"rank":1},"hybrid":{"rank":1}}},{"question":"how delays in a feedback loop make a system unstable","expected":"thinking-in-systems","tests":"paraphrase","modes":{"keyword":{"rank":1},"semantic":{"rank":1},"hybrid":{"rank":1}}},{"question":"the pressure to constantly perform and optimise yourself","expected":"the-disappearance-of-rituals","tests":"paraphrase","modes":{"keyword":{"rank":null},"semantic":{"rank":1},"hybrid":{"rank":1}}},{"question":"financial bubbles during the installation of a new technology","expected":"technological-revolutions-and-financial-capital","tests":"paraphrase","modes":{"keyword":{"rank":1},"semantic":{"rank":1},"hybrid":{"rank":1}}},{"question":"central banks as the source of global liquidity","expected":"capital-wars","tests":"concept","modes":{"keyword":{"rank":1},"semantic":{"rank":1},"hybrid":{"rank":1}}},{"question":"status games between actors on stage","expected":"impro","tests":"concept","modes":{"keyword":{"rank":1},"semantic":{"rank":1},"hybrid":{"rank":1}}},{"question":"how a trading company turned into a military power","expected":"the-anarchy","tests":"paraphrase","modes":{"keyword":{"rank":1},"semantic":{"rank":1},"hybrid":{"rank":1}}},{"question":"loneliness and the feeling of not belonging anywhere","expected":"o-livro-do-desassossego","tests":"English query, Portuguese book","modes":{"keyword":{"rank":null},"semantic":{"rank":1},"hybrid":{"rank":1}}},{"question":"como compradores e vendedores se encontram em mercados de balcão","expected":"the-economics-of-over-the-counter","tests":"Portuguese query, English book","modes":{"keyword":{"rank":null},"semantic":{"rank":1},"hybrid":{"rank":1}}}]};/*COMPARE:END*/
+/*HIST:START*/const CHUNK_HIST = [{"label":"0","n":194,"target":false},{"label":"100","n":695,"target":false},{"label":"200","n":2105,"target":true},{"label":"300","n":6404,"target":true},{"label":"400","n":417,"target":true},{"label":"500","n":43,"target":false},{"label":"600+","n":2,"target":false}];/*HIST:END*/
+/*BOOKS:START*/const BOOKS = [{"id":"a-lanterna-na-popa-memorias-vol","t":"A Lanterna na Popa","a":"Roberto Campos","lang":"por","fmts":["PDF"],"src":"PDF","score":0.933,"cands":{"PDF":0.933},"secs":57,"front":4016,"body":544569,"back":0,"figs":0,"caps":0,"inl":0,"eqs":0,"cards":63,"described":0,"thesis":"Campos presents himself as a liberal, gradualist, market-oriented technocrat whose analyses of Brazilian inflation, planning, state intervention and nationalism were correct but insufficiently persuasive to prevail. He argues that Brazil's developmentalist, statist and nationalist policies produced inflation, debt and stagnation, and that reform through stabilization, openness and market mechanisms was the necessary path.","useFor":["Tracing Brazilian stabilization and monetary policy debates from the 1950s to the 1990s, including PEM, PAEG and the Cruzado and Collor plans.","Studying Brazil-United States relations and Cold War diplomacy from Washington posts under Goulart and Kennedy.","Analyzing state intervention, planning and privatization arguments in Brazilian economic history, from the BNDE through the Plano de Metas to the 1988 Constitution.","Finding first-person accounts and personal evaluations of Brazilian political figures such as Gudin, Lacerda, Prestes, Gallotti and Kubitschek."],"chunks":1520,"chunkMedian":370,"fixed":["authors","languages","pubdate","title"]},{"id":"breakneck","t":"Breakneck","a":"Daniel Wang","lang":"eng","fmts":["EPUB","MOBI"],"src":"EPUB","score":1.0,"cands":{"EPUB":1.0,"MOBI":1.0},"secs":15,"front":202,"body":75502,"back":8091,"figs":0,"caps":0,"inl":0,"eqs":0,"cards":9,"described":0,"thesis":"China is an engineering state that builds rapidly at breakneck speed, while the United States has become a lawyerly society whose procedural obstruction blocks construction; each country can learn from the other, though China's social control and policy errors carry serious costs.","useFor":["Comparing Chinese and US approaches to infrastructure, permitting and public works","Analyzing China's manufacturing and electronics supply chain, including Shenzhen and process knowledge","Studying the one-child policy, its enforcement and demographic consequences","Examining the Shanghai lockdown and the political economy of zero-Covid"],"chunks":244,"chunkMedian":349,"fixed":[]},{"id":"capital-wars","t":"Capital Wars","a":"Michael J. Howell","lang":"eng","fmts":["EPUB","MOBI"],"src":"EPUB","score":1.0,"cands":{"EPUB":1.0,"MOBI":1.0},"secs":16,"front":0,"body":105019,"back":0,"figs":147,"caps":112,"inl":2,"eqs":0,"cards":16,"described":149,"thesis":"Global Liquidity, a footloose pool of credit, savings and cross-border capital, drives financial cycles, asset prices and crises, so economic analysis should use flow-of-funds and refinancing dynamics rather than interest rates and current accounts. The rivalry between Chinese industry and American finance (the 'capital wars') is reshaping where liquidity and capital flow.","useFor":["Sizing and tracking global liquidity, shadow banking and cross-border capital flows over time","Evaluating claims that QE raises term premia and that the yield curve slope is a weak recession predictor","Analysing the US dollar cycle, Triffin dilemma and emerging market capital flow dynamics","Studying central bank balance sheet tools (Fed, ECB, PBoC) and their liquidity multipliers"],"chunks":444,"chunkMedian":299,"fixed":[]},{"id":"cybernetic-revolutionaries","t":"Cybernetic Revolutionaries","a":"Eden Medina","lang":"eng","fmts":["EPUB","MOBI"],"src":"EPUB","score":0.929,"cands":{"EPUB":0.929,"MOBI":0.929},"secs":51,"front":258,"body":99556,"back":38497,"figs":46,"caps":6,"inl":0,"eqs":0,"cards":12,"described":46,"thesis":"Project Cybersyn was a case of political values being built into technology: its cybernetic design reflected the democratic socialist goals of Allende's government, and Cold War geopolitics, including US opposition to the government, halted it. Medina argues that technology is not politically neutral and that the project's political, gender and class assumptions shaped its outcomes.","useFor":["Case studies of how political values are embedded in technological design and infrastructure","Research on cybernetics history, including transnational flows between Chile, Britain and the US","Analysis of technology transfer and resource constraints in state-led socialist projects","Studies of Chilean economic policy and computing under Allende and earlier governments"],"chunks":444,"chunkMedian":327,"fixed":[]},{"id":"cybernetics-second-edition","t":"Cybernetics, Second Edition","a":"Norbert Wiener","lang":"eng","fmts":["EPUB","MOBI"],"src":"EPUB","score":0.929,"cands":{"EPUB":0.929,"MOBI":0.0},"secs":16,"front":99,"body":78768,"back":0,"figs":106,"caps":1,"inl":0,"eqs":0,"cards":12,"described":106,"thesis":"Control and communication in animal and machine are governed by the same principles, notably feedback, information and statistical time-series theory, so that a single cybernetic framework can describe both engineered and living systems. Wiener also argues that the vitalist-mechanist divide is largely dissolved by the modern automaton, and that information is neither matter nor energy.","useFor":["Tracing the historical origins of feedback and control theory in the 1940s and 1950s","Examining the relation between information theory and statistical mechanics and thermodynamics","Finding Wiener's arguments on the mechanist-vitalist debate and the nature of time in living and artificial systems","Locating analyses of neural circuit models, memory and mental disorders in cybernetic terms"],"chunks":276,"chunkMedian":332,"fixed":[]},{"id":"engines-that-move-markets","t":"Engines That Move Markets","a":"Alasdair Nairn","lang":"eng","fmts":["EPUB","MOBI"],"src":"EPUB","score":0.927,"cands":{"EPUB":0.927,"MOBI":0.924},"secs":200,"front":846,"body":192525,"back":395,"figs":95,"caps":0,"inl":0,"eqs":0,"cards":157,"described":95,"thesis":"Technological change is a constant driver of productivity and new markets, but it rarely makes investors rich: new technologies tend to produce speculative bubbles, capital is often destroyed through overinvestment, pioneers rarely capture the gains, and winners are clear only in hindsight, so investors do better identifying losers and waiting for shakeout than backing technology in its early phase.","useFor":["Comparing historical technology bubbles (railways, Brush arc lighting, radio, Internet) to test patterns of speculation and collapse","Assessing investor outcomes for early entrants versus later winners in capital-intensive technology industries","Tracing how patents, monopoly and antitrust shaped market structure in telegraph, telephone, oil, automobile, radio and computing industries","Researching the role of press publicity, stock promotion and financing in early technology share prices"],"chunks":722,"chunkMedian":306,"fixed":[]},{"id":"fear-and-trembling","t":"Fear and Trembling","a":"Søren Kierkegaard","lang":"eng","fmts":["EPUB","MOBI"],"src":"EPUB","score":0.958,"cands":{"EPUB":0.958,"MOBI":0.958},"secs":17,"front":298,"body":54400,"back":7087,"figs":0,"caps":0,"inl":0,"eqs":0,"cards":10,"described":0,"thesis":"Faith, as exemplified by Abraham's willingness to sacrifice Isaac, is a paradox that cannot be mediated by the ethical or by philosophy: the knight of faith stands in an absolute relation to God, and this involves a teleological suspension of the ethical that is incomprehensible to others and cannot be explained away. The book argues that retelling Abraham's story should expose this paradox rather than make it cheap.","useFor":["Tracing the teleological suspension of the ethical and how it is argued across Problema I and related passages.","Comparing Abraham with tragic heroes such as Agamemnon, Jephthah and Brutus for research on the ethical and tragedy.","Studying the knight of faith versus the knight of infinite resignation as a distinction in Kierkegaard's account of faith.","Examining Kierkegaard's critique of Hegelian mediation and the 'go further' urge in nineteenth-century Danish thought."],"chunks":189,"chunkMedian":333,"fixed":[]},{"id":"hardball","t":"Hardball","a":"George Stalk","lang":"eng","fmts":["EPUB","MOBI"],"src":"EPUB","score":1.0,"cands":{"EPUB":1.0,"MOBI":1.0},"secs":17,"front":257,"body":53731,"back":1235,"figs":0,"caps":0,"inl":0,"eqs":0,"cards":10,"described":0,"thesis":"Companies should pursue hardball strategies that aggressively build and exploit competitive advantage, converting it into decisive advantage through a virtuous cycle, while staying within bright-line ethical and legal limits. Winning requires both specific offensive strategies and a hardball mindset focused on the heart of the matter.","useFor":["Identifying specific offensive strategies a firm could use against a dominant or complacent competitor, with supporting cases.","Evaluating the legal and ethical limits of aggressive pricing and competitive tactics, such as predatory pricing and price discrimination.","Finding case examples of corporate turnarounds, retail disruption, and breaking industry norms (e.g., CarMax, Southwest, Ryanair).","Assessing how mergers and acquisitions should be aligned with strategy and integrated after closing."],"chunks":158,"chunkMedian":361,"fixed":[]},{"id":"impro","t":"Impro","a":"Keith Johnstone","lang":"eng","fmts":["MOBI"],"src":"MOBI","score":0.968,"cands":{"MOBI":0.968},"secs":8,"front":523,"body":76156,"back":9049,"figs":0,"caps":0,"inl":0,"eqs":0,"cards":7,"described":0,"thesis":"Improvisation is a skill that can be taught by making status, spontaneity, narrative structure and trance visible and playable, so that actors and writers can work without relying on the conscious intellect. Johnstone argues that the imagination is effortless and is suppressed by education and social habit, and that exercises can release it.","useFor":["Tracing how Johnstone defines and teaches status and its application in acting and writing exercises","Studying Johnstone's theory of narrative structure, reincorporation and interrupted routines in improvised and written drama","Researching the trance-based approach to Mask work, its induction methods and safety claims","Comparing Johnstone's views on spontaneity and education with other writing on creativity and acting training"],"chunks":244,"chunkMedian":363,"fixed":[]},{"id":"making-sense-of-chaos","t":"Making Sense of Chaos","a":"J. Doyne Farmer","lang":"eng","fmts":["EPUB","MOBI"],"src":"EPUB","score":0.978,"cands":{"EPUB":0.978,"MOBI":0.978},"secs":33,"front":1344,"body":89245,"back":23536,"figs":22,"caps":20,"inl":0,"eqs":0,"cards":20,"described":22,"thesis":"Economies are complex adaptive systems whose behavior emerges from heterogeneous, boundedly rational agents and non-equilibrium interactions, so economics should be rebuilt on agent-based models that are judged by verisimilitude and predictive accuracy rather than by standard equilibrium assumptions. Such models can better explain crises, market inefficiencies and the green-energy transition, and society should invest in them.","useFor":["Comparing agent-based modelling with standard DSGE and equilibrium approaches in macroeconomics","Investigating endogenous causes of financial crises, market inefficiency and market-impact laws","Analysing how bounded rationality and heuristics are modelled as alternatives to utility maximization","Evaluating climate-economics methods, including integrated-assessment models and learning-curve forecasts of clean-technology costs"],"chunks":334,"chunkMedian":325,"fixed":[]},{"id":"napoleon-the-great","t":"Napoleon the Great","a":"Andrew Roberts","lang":"eng","fmts":["EPUB","MOBI"],"src":"EPUB","score":0.919,"cands":{"EPUB":0.919,"MOBI":0.919},"secs":49,"front":2342,"body":327855,"back":39900,"figs":119,"caps":0,"inl":0,"eqs":0,"cards":37,"described":119,"thesis":"Napoleon's greatness is assessed as the product of an army-shaped character, a battlefield record of speed and offensive generalship, and a civil legacy (the Code and lasting institutions), set against the wars he started and the deaths they caused. The book argues that his defeat was largely the result of his own errors and that determinist readings of his fall are unconvincing.","useFor":["Tracing the military campaigns of Napoleon, with force sizes, casualty figures and tactical detail for specific battles","Assessing source reliability of memoirs and Napoleon's own bulletins and letters","Examining the Continental System and Napoleon's economic and trade policies","Studying the Consulate's and Empire's civil institutions, including the Civil Code and Concordat"],"chunks":1169,"chunkMedian":328,"fixed":[]},{"id":"o-livro-do-desassossego","t":"O Livro Do Desassossego","a":"Fernando Pessoa","lang":"por","fmts":["EPUB","MOBI"],"src":"EPUB","score":0.934,"cands":{"EPUB":0.934,"MOBI":0.91},"secs":528,"front":45,"body":148923,"back":178,"figs":1,"caps":0,"inl":0,"eqs":0,"cards":235,"described":1,"thesis":"Across its fragments the book presents a self-described dreamer and office clerk who withdraws from action and social life into sensation, reverie and introspection, and who finds in dream, literature and aesthetic contemplation the only tolerable form of existence. It repeatedly questions the reality of the self, of others and of the external world, while treating writing as a partial and unsatisfying escape from a life of routine and disillusion.","useFor":["Locating fragments on a given mood or theme such as boredom, nostalgia or solitude","Tracing the recurring figures Vasques, Moreira and the office boy across fragments","Studying the relation between dream, sensation and reality in the text","Comparing the Autobiografia sem fatos sequence with the selected passages of Os grandes trechos"],"chunks":640,"chunkMedian":236,"fixed":["languages"]},{"id":"poor-charlies-almanack","t":"Poor Charlie's Almanack","a":"Charles T. Munger","lang":"eng","fmts":["EPUB","MOBI"],"src":"EPUB","score":0.94,"cands":{"EPUB":0.94,"MOBI":0.94},"secs":27,"front":41,"body":142504,"back":0,"figs":0,"caps":0,"inl":0,"eqs":0,"cards":21,"described":0,"thesis":"Good judgment in investing and in life depends on a latticework of multidisciplinary mental models, applied with inversion and awareness of the psychological tendencies that cause human misjudgment. Sound decisions, reliable character and patient, concentrated commitment to high-quality businesses are presented as the means to a well-lived and independent life.","useFor":["Tracing Munger's mental models and how he applies them to investment and business decisions","Finding Munger's views on psychological biases and their antidotes, with examples","Researching Munger's views on accounting, stock options, and financial scandals","Studying Munger's critique of academic economics, psychology and professional education"],"chunks":397,"chunkMedian":372,"fixed":[]},{"id":"rubicon","t":"Rubicon","a":"Tom Holland","lang":"eng","fmts":["EPUB","MOBI"],"src":"EPUB","score":0.967,"cands":{"EPUB":0.967,"MOBI":0.967},"secs":25,"front":1529,"body":132726,"back":9754,"figs":8,"caps":0,"inl":0,"eqs":0,"cards":14,"described":8,"thesis":"The Roman Republic was a remarkably resilient and competitive system whose own traditions of honour, glory, and imperial expansion bred the ambitions and civil wars that destroyed it, after which the forms of the Republic survived under Augustus while its freedoms did not. The book presents the crossing of the Rubicon in 49 BC as a dividing line between a free republic and autocratic rule, and treats Roman history as both alien and familiar.","useFor":["Tracing the political and constitutional history of the late Roman Republic, including the tribunate, the consulship and the cursus honorum","Studying the causes and course of Roman civil wars, from Marius and Sulla through Caesar and the Second Triumvirate","Examining Rome's eastern wars, provincial taxation and tax farming, and the economic interests shaping imperial policy","Researching Roman propaganda, reputation and the cultivation of glory by individual politicians and generals"],"chunks":464,"chunkMedian":300,"fixed":[]},{"id":"technological-revolutions-and-financial-capital","t":"Technological Revolutions and Financial Capital","a":"Carlota Perez","lang":"eng","fmts":["PDF","MOBI"],"src":"PDF","score":0.883,"cands":{"MOBI":0.859,"PDF":0.883},"secs":28,"front":760,"body":67085,"back":10371,"figs":24,"caps":20,"inl":0,"eqs":0,"cards":18,"described":24,"thesis":"Productivity surges from technological revolutions and financial bubbles recur together because both stem from how technologies evolve and are assimilated and from the functional separation of financial and production capital. Full gains from each revolution arrive only after a two-to-three-decade lag of turbulent adaptation, and a golden age follows once appropriate socio-institutional frameworks are established.","useFor":["Tracing historical patterns of financial bubbles and crashes across successive technological revolutions","Analyzing the lag between technological change and institutional or regulatory adaptation","Assessing the relationship between financial capital and innovation over long time spans","Comparing the current information-technology surge with earlier surges to inform policy questions"],"chunks":226,"chunkMedian":345,"fixed":["authors","languages","title"]},{"id":"the-anarchy","t":"The Anarchy","a":"William Dalrymple","lang":"eng","fmts":["EPUB","MOBI"],"src":"MOBI","score":1.0,"cands":{"EPUB":0.978,"MOBI":1.0},"secs":21,"front":245,"body":164336,"back":44117,"figs":79,"caps":0,"inl":0,"eqs":0,"cards":16,"described":79,"thesis":"A single London-based joint stock company, driven by profit and backed by private violence, replaced the Mughal Empire as masters of India, and its predatory conduct in Bengal and beyond caused the Anarchy of the late eighteenth century. The Company's corporate character, not the British state, drove the conquest, and its story remains a prototype for modern corporate power.","useFor":["Tracing how the East India Company acquired territorial and fiscal power in Bengal, 1757-1765.","Studying corporate governance, lobbying and parliamentary oversight of chartered companies in the eighteenth century.","Examining Mughal succession politics, Maratha and Rohilla conflicts, and the 1788 sack of Delhi through contemporary Persian and European sources.","Comparing historical colonial corporations with modern multinational corporations, as the epilogue does."],"chunks":582,"chunkMedian":356,"fixed":[]},{"id":"the-disappearance-of-rituals","t":"The Disappearance of Rituals","a":"Byung-Chul Han","lang":"eng","fmts":["PDF","MOBI"],"src":"PDF","score":0.95,"cands":{"MOBI":0.0,"PDF":0.95},"secs":15,"front":351,"body":22112,"back":2751,"figs":0,"caps":0,"inl":0,"eqs":0,"cards":10,"described":0,"thesis":"Modern society has lost the symbolic, ritual and play-based forms that once stabilized time, community and meaning, and it is replacing them with a compulsion of production, performance, transparency and overproduction of positivity. This loss produces narcissism, burnout, depression and a flattened, purely additive life.","useFor":["Tracing how Han defines ritual and its loss across the present-day critique of modern society","Comparing Han's accounts of work, play and performance with Hegel, Marx, Kojève, Huizinga or Schiller-style theories","Locating passages on war, drone warfare and the ethics of symmetry for political philosophy research","Examining Han's diagnosis of transparency, dataism and overproduction in relation to digital culture and knowledge"],"chunks":71,"chunkMedian":362,"fixed":["languages"]},{"id":"the-economics-of-over-the-counter","t":"The Economics of Over-the-Counter Markets","a":"Julien Hugonnier, Benjamin Lester, Pierre-Olivier Weill","lang":"eng","fmts":["EPUB","MOBI"],"src":"EPUB","score":0.956,"cands":{"EPUB":0.956,"MOBI":0.877},"secs":213,"front":1903,"body":122793,"back":12368,"figs":83,"caps":82,"inl":5,"eqs":1926,"cards":148,"described":88,"thesis":"Search and bargaining frictions in decentralized OTC markets generate misallocation of assets, endogenous intermediation and price wedges that standard Walrasian models omit, and these frictions interact with information asymmetry and market stress to shape liquidity, prices and venue choice.","useFor":["Modeling how search and bargaining frictions shape asset prices, allocations and trading costs in OTC markets","Deriving or checking equilibrium conditions for dealer intermediation, chain length and markups","Analyzing liquidity dynamics and dealer inventory behavior during market stress","Studying adverse selection and multiplicity of equilibria in decentralized markets with private or common values"],"chunks":483,"chunkMedian":314,"fixed":[]},{"id":"the-hard-thing-about-hard-things","t":"The Hard Thing About Hard Things","a":"Ben Horowitz","lang":"eng","fmts":["MOBI"],"src":"MOBI","score":1.0,"cands":{"MOBI":1.0},"secs":55,"front":2352,"body":75015,"back":2331,"figs":0,"caps":0,"inl":0,"eqs":0,"cards":46,"described":0,"thesis":"Building a company in hard circumstances cannot be reduced to a formula; leaders must face painful decisions and their own psychology directly, using judgment, courage and candor, and the author argues this by sharing his own difficult experiences as an entrepreneur and CEO.","useFor":["Researching CEO decision-making under crisis, such as near-bankruptcy, stock collapse, or existential competition","Finding practical processes for layoffs, firing executives, demotions and difficult personnel conversations","Studying executive hiring and integration, including screening, reference checks and executive evaluation","Analyzing company culture, communication, feedback and one-on-one practices in growing technology firms"],"chunks":221,"chunkMedian":363,"fixed":["authors"]},{"id":"the-man-who-solved-the-market","t":"The Man Who Solved the Market","a":"Gregory Zuckerman","lang":"eng","fmts":["EPUB","MOBI"],"src":"EPUB","score":0.962,"cands":{"EPUB":0.962,"MOBI":0.962},"secs":36,"front":307,"body":96223,"back":6905,"figs":18,"caps":15,"inl":0,"eqs":0,"cards":21,"described":18,"thesis":"Jim Simons built Renaissance Technologies into a highly profitable quantitative investing firm by replacing intuition-based trading with statistical and mathematical models, assembling researchers from outside finance, and emphasizing data-driven discipline and secrecy. The book also argues that the firm's success, and the wealth and political involvement it produced, raised lasting questions about quant investing and about the influence of its leaders.","useFor":["Tracing the historical development of quantitative and model-driven trading strategies","Examining how Renaissance Technologies' hiring, incentives and internal culture shaped its results","Researching the performance, fees and returns of the Medallion fund over time","Analyzing the 2007 quant quake and the broader rise of quant investors in equity markets"],"chunks":281,"chunkMedian":371,"fixed":[]},{"id":"the-plains","t":"The Plains","a":"Gerald Murnane","lang":"eng","fmts":["EPUB","MOBI"],"src":"MOBI","score":0.753,"cands":{"EPUB":0.752,"MOBI":0.753},"secs":11,"front":379,"body":30884,"back":58,"figs":0,"caps":0,"inl":0,"eqs":0,"cards":3,"described":0,"thesis":"Sections 9 to 11 follow a narrator who tries to explain himself to plainsfolk through a film while his writing, staging and photography blur the line between the visible and the invisible. The central themes are self-image, the plains as both landscape and subject, and the difficulty of being understood.","useFor":["Tracing how the narrator's film project The Interior develops across sections 9 to 11","Analysing Murnane's treatment of photography, staging and illusion in the plains setting","Examining the plains as landscape, self-image and cultural identity in the text","Locating passages on the colour factions, secret societies and political disputes of the plains"],"chunks":95,"chunkMedian":338,"fixed":[]},{"id":"the-sailor-who-fell-from-grace","t":"The Sailor Who Fell from Grace with the Sea","a":"Yukio Mishima","lang":"eng","fmts":["EPUB","MOBI"],"src":"MOBI","score":0.925,"cands":{"EPUB":0.9,"MOBI":0.925},"secs":27,"front":476,"body":40598,"back":169,"figs":2,"caps":0,"inl":0,"eqs":0,"cards":15,"described":2,"thesis":"A widow's affair with a merchant sailor, observed by her adolescent son, becomes the vehicle for a story about the sea, illusion and reality, and the fragile bond between fatherhood, innocence and destructive ideals. The son's gang plots to kill the sailor after he marries into the family.","useFor":["Tracing the sea as symbol and its shifting meanings across the Ryuji and Noboru storylines.","Analyzing voyeurism and peephole surveillance as narrative and thematic devices.","Studying how the boys' gang ideology (adult hypocrisy, father as evil, social permission) is developed in Part Two.","Comparing Ryuji's ideals of glory and death with his later domestic life."],"chunks":117,"chunkMedian":373,"fixed":["authors"]},{"id":"the-temple-of-the-golden-pavilion","t":"The Temple of the Golden Pavilion","a":"Yukio Mishima","lang":"eng","fmts":["MOBI"],"src":"MOBI","score":0.923,"cands":{"MOBI":0.923},"secs":15,"front":438,"body":98858,"back":0,"figs":18,"caps":0,"inl":0,"eqs":0,"cards":12,"described":18,"thesis":"The novel tells the story of Mizoguchi, a stuttering acolyte whose obsessive attachment to the Golden Temple's beauty, combined with isolation, humiliation, and postwar disorder, drives him to burn the temple. Its central themes are the conflict between beauty and life, the limits of knowledge against action, and the search for self-existence in a world he feels estranged from.","useFor":["Studying Mishima's treatment of beauty, destruction, and the aesthetic ideal in postwar Japanese fiction.","Examining how the novel uses Zen koans and Zen practice, and the introduction's critique of their misuse.","Analyzing the psychology of the stuttering, isolated narrator and themes of resentment and alienation.","Comparing the novel's spiral narrative structure and lack of moral judgment with other modern Japanese novels."],"chunks":305,"chunkMedian":349,"fixed":[]},{"id":"thinking-in-systems","t":"Thinking in Systems","a":"Donella H. Meadows","lang":"eng","fmts":["EPUB","MOBI"],"src":"MOBI","score":0.875,"cands":{"EPUB":0.786,"MOBI":0.875},"secs":24,"front":671,"body":65128,"back":2773,"figs":82,"caps":52,"inl":0,"eqs":0,"cards":11,"described":82,"thesis":"Systems produce their own behavior through their interconnected structure of stocks, flows, feedback loops, delays and purposes, so outcomes cannot be explained by isolated events or individual elements alone. Understanding these structures lets people anticipate surprises, recognize recurring traps and find high-leverage points for intervention.","useFor":["Identifying feedback-loop structures that explain persistent or recurring problems in policy, organizations or environmental management.","Finding recurring system traps such as drift to low performance or shifting the burden to explain why interventions fail.","Evaluating and ranking intervention points by leverage, including why parameter changes may have little effect.","Locating conceptual definitions and simple illustrative models of stocks, flows, delays and nonlinearity for teaching or modeling."],"chunks":234,"chunkMedian":357,"fixed":["authors"]}];/*BOOKS:END*/
+
+const STAGES = [
+  { n: 0, name: "Catalog", what: "Library metadata into one JSON file", status: "done", kind: "Plain code",
+    inputs: ["books/metadata.db (Calibre's SQLite, opened read-only)", "metadata_overrides.json"],
+    process: ["Read titles, authors, languages, formats and descriptions", "Clean author names (Calibre stores commas as |)", "Give each book a short, stable id: thinking-in-systems", "Apply hand-written fixes on top"],
+    outputs: ["data/catalog.json"],
+    cmds: ["uv run books catalog"],
+    lessons: [
+      ["Authors", "Calibre writes “Han, Byung-Chul” as Han| Byung-Chul, sometimes with a duplicate in brackets.", "Normalise in code: First Last."],
+      ["Junk metadata", "Download sites left authors like cj5 and chenjin5.com, and “Desconhecido” (unknown).", "metadata_overrides.json, keyed by book id, because the library is a static copy."]
+    ],
+    learn: "How to treat a source system as read-only and add a curation layer on top." },
+  { n: 1, name: "Extract", what: "Every book into clean Markdown chapters", status: "done", kind: "Plain code",
+    inputs: ["EPUB, MOBI or PDF files from books/"],
+    process: ["Convert MOBI to EPUB with Calibre's ebook-convert (cached)", "Read the reading order and table of contents", "Drop a marker at each TOC target, convert HTML to Markdown, split on markers", "Fallbacks: book headings, PDF outline, OCR chapter detection", "Save each figure and leave an image link where it appeared, with its caption", "Convert MathML equations to LaTeX", "Try every format, score each split, keep the best"],
+    outputs: ["data/books/<id>/book.json", "data/books/<id>/sections/NNN-title.md", "data/books/<id>/figures/ + figures.json"],
+    cmds: ["uv run books extract", "uv run books outline <id>"],
+    lessons: [
+      ["Cybernetics", "Table of contents had one entry for the whole book.", "Split on the book's own headings; merge “IV” + “Feedback and Oscillation”."],
+      ["Rituals", "MOBI's TOC pointed at the endnotes, so the chapters landed in front matter.", "The PDF outline scored 0.95 and the MOBI 0.0, so the PDF wins."],
+      ["Tech. Revolutions", "MOBI made from a PDF; TOC entries were page labels like “chapter title xiii”.", "The PDF outline has all 15 chapters."],
+      ["Cybernetic Rev.", "Note groups “1”…“32” listed as chapters.", "A bare-number title inherits the kind of the section before it (Notes, so back matter)."],
+      ["Lanterna na Popa", "1,412-page scan, no outline, OCR noise (CaPrPíÍTULO), one paragraph per line.", "Fuzzy chapter match, rejoin split words and lines, keep page markers."],
+      ["All books", "Images were dropped: charts, stock-and-flow diagrams and equations were lost.", "Keep every figure as a file with an image link in the text; skip tiny and repeated images (ornaments, logos)."],
+      ["OTC Markets", "Each equation existed twice: as MathML and as a PNG fallback beside it.", "Convert the MathML to LaTeX and drop the PNG copy."],
+      ["Tech. Revolutions", "Figures are vector drawings, so their labels leaked into the text as fragments.", "Find clusters of drawn paths, render them as an image, move their label text into figures.json."],
+      ["Cybernetics", "A chapter-number page holding only an ornament no longer counted as empty.", "Ignore image links when deciding whether a heading has text of its own."]
+    ],
+    formula: true,
+    learn: "Real files break the textbook path. Score the candidates and keep a record of why each one won." },
+  { n: 2, name: "Chunk", what: "Chapters into citable passages", status: "done", kind: "Plain code",
+    inputs: ["Chapter files from stage 1 (body and notes; not front matter, indexes or bibliographies)"],
+    process: ["Cut each chapter into blocks: paragraphs, headings, tables, figures, equations", "Glue blocks that must stay together: a figure and its caption, an equation and the sentences around it", "Pack whole blocks up to ~400 words (max 600), starting fresh at headings; never cross a chapter", "Split a block only when it alone is too long: by sentence, else by line", "Drop chunks that only repeat their chapter title", "Keep the previous chunk's last sentences in context_before: used by search, kept out of the quoted text"],
+    outputs: ["data/books/<id>/chunks.jsonl", "data/books/<id>/chunks.meta.json"],
+    cmds: ["uv run books chunk", "uv run books show-chunk thinking-in-systems:010:008"],
+    hist: true,
+    lessons: [
+      ["Livro do Desassossego", "Its list of fragment numbers was one 2,644-word block with no sentence endings.", "If splitting by sentence still leaves a piece too big, split by lines."],
+      ["Lanterna, Cybernetic Rev.", "Chapter-opener pages and empty dividers became 5–15-word chunks of pure title.", "Drop a chunk whose words are only its chapter title (unless it holds a figure)."],
+      ["OTC Markets", "The spot check found broken LaTeX like \\equivV and \\geR.", "Symbol commands now end with a space. Fixed in stage 1, then re-chunked."]
+    ],
+    learn: "How chunk size and boundaries decide what search can find. Every chunk id (book:chapter:seq) is a citation." },
+  { n: 3, name: "Index", what: "Keyword and meaning search", status: "done", kind: "Plain code + local model",
+    inputs: ["9,399 chunks from stage 2"],
+    process: ["Keyword index: SQLite FTS5 with BM25 scoring, accent-insensitive, headings weighted 2×", "Meaning index: every chunk turned into 1,024 numbers by bge-m3, run locally on your GPU (8 minutes for the library)", "Both live in one file, data/index.sqlite, with the vectors stored by sqlite-vec", "Hybrid search merges the two ranked lists (Reciprocal Rank Fusion); ties go to meaning search", "Every result is a chunk id you can cite, with chapter path and page"],
+    outputs: ["data/index.sqlite (116 MB)", "data/cache/embeddings.sqlite: vectors cached, so rebuilds only embed changed chunks"],
+    cmds: ["uv run books index", "uv run books search \"central banks and liquidity\" -m all"],
+    compare: true,
+    lessons: [
+      ["Disk", "The 2.3 GB model download failed: C: had 1.4 GB free.", "You freed space. Large downloads now start with a disk check."],
+      ["Model files", "The model failed to load: it expected an ONNX copy we had chosen not to download.", "Use the same file selection when loading as when downloading."],
+      ["Speed", "CPU embedding ran at 1.4 chunks/s (about 2½–3 hours).", "Switched to CUDA PyTorch on the RTX 3050 Ti in half precision: 20–26 chunks/s, 8 minutes."],
+      ["Hybrid ties", "On the cross-language questions, keyword's #1 and meaning's #1 scored exactly the same (1/61), and the tie went to keyword's weaker match.", "Ties break toward meaning search. Real weighting waits for Phase 6 (evals), to avoid tuning to 12 questions."],
+      ["Cold start", "A hybrid search from the CLI takes ~50 s: imports and model loading. The query itself takes 0.06 s.", "Keep the model loaded in a long-running process (Phase 5). Keyword-only search stays fast meanwhile."]
+    ],
+    learn: "When keyword search beats meaning search and the reverse, why hybrid exists, and that “fast” depends on keeping the model loaded." },
+  { n: 4, name: "Enrich", what: "Sort, label and map with Haiku", status: "done", kind: "LLM (Claude Haiku 5.5) + plain code",
+    inputs: ["857 figures with caption and surrounding text", "Chunks of every chapter, with their ids"],
+    process: ["Goal: make the library easy for a strong agent to navigate. Label and extract; don't interpret", "Figures: type plus the data they show: chart values and trends, tables in Markdown, diagrams in Mermaid, equations in LaTeX", "Descriptions join their figure when chunks are built; then re-index (only 1,141 changed chunks re-embedded)", "Chapter cards: short summary, key points linked to chunk ids, concepts, entities, stated numbers and dates, questions answered", "Book cards built from the chapter cards (no second read of the book)", "Concept map: concept names grouped by meaning with local bge-m3, no LLM", "Structured JSON output, content-hashed requests (re-runs pay only for changes), direct calls 8 at a time"],
+    outputs: ["data/books/<id>/enrich/figures.jsonl, chapters.jsonl, book.jsonl", "data/concepts.json", "data/enrich/usage.jsonl (every token and dollar)"],
+    cmds: ["uv run books enrich estimate", "uv run books enrich submit --kind chapter --now --yes", "uv run books concepts --find feedback"],
+    enrich: true,
+    lessons: [
+      ["Speed", "Batches can take up to an hour (the pilot took ~3 minutes).", "--now mode: direct calls, 8 at a time, ~60 figures a minute, at 2× the batch price. You chose speed."],
+      ["Engines (200 sections)", "Its book card ran out of output room listing every section.", "More output room for book cards; only the missing card was re-sent ($0.01)."],
+      ["Citations", "0.2% of cited chunk ids did not exist, mostly in Pessoa's one-chunk fragments.", "Cards are cleaned on read: invalid ids are dropped, so 100% of citations reach a real chunk."],
+      ["Concept grouping", "At similarity 0.86, “leverage” (finance) merged with “leverage point” (Meadows): the same score as a good merge.", "Stricter 0.90: spelling variants still merge, distinct ideas stay apart. A false link misleads more than a missed one."],
+      ["Budget", "Final spend $1.96 against the ~$1.50 discussed: chapters produced longer cards than estimated.", "All work done; usage.jsonl holds the exact cost per request."]
+    ],
+    learn: "Structured extraction with a small model, vision as data, cost control (estimate, hash, batch or direct), and why embeddings alone can't decide when two concepts are the same." },
+  { n: 5, name: "Access", what: "Tools an agent can use", status: "done", kind: "Plain code",
+    inputs: ["Index, chunks, chapter/book cards, figure data, concept map"],
+    process: ["One core library (bookshelf/library.py): seven read-only functions. The CLI and server are thin layers, so they can't disagree", "Zoom in like a researcher: shelf → book → chapter → passage. Every step hands over ids for the next", "Search results carry their chapter's one-line summary, so the agent knows where each passage sits", "read returns the exact text and a ready-made citation. Cards are labelled as machine-written: navigate with them, quote only from read", "Compact text output by default (about half the tokens of JSON); --json for programs", "books serve keeps bge-m3 on the GPU: ready in ~30 s, then a hybrid search takes 1.7 s end to end (~0.1 s of it is the search). Without it, search falls back to keyword and says so", "Claude Code skill: the workflow, citation rules, and when to start the server", "No MCP for now: Claude Code uses the CLI. It can be added later as a thin layer over the same functions"],
+    outputs: ["src/bookshelf/library.py, present.py, server.py", ".claude/skills/books/SKILL.md", "Commands: library, book, chapter, search, read, related, figure, serve"],
+    cmds: ["uv run books serve", "uv run books search \"self-reinforcing growth that hits limits\"", "uv run books read thinking-in-systems:011:028 -C 1", "uv run books related \"feedback loop\""],
+    lessons: [
+      ["One book crowds out the rest", "A cross-book question returned six passages, all from Meadows.", "At most 3 results per book when searching the whole library; Perez's Frenzy and Turning Point chapters now appear. --per-book 0 lifts it."],
+      ["Agents name books by author", "`-b perez` failed: books matched only by id or title.", "Book arguments also match authors (`-b wang`, `-b campos`). Ambiguous names list the matches instead of guessing."],
+      ["Output is a cost", "The shelf as JSON was 28k characters (~7k tokens) on every look.", "Compact text, thesis only by default: ~3k tokens. `--full` adds what each book is for. A passage is ~500 tokens, a chapter ~3k."],
+      ["Machine text inside passages", "Figure descriptions sit in passages as blockquotes. An agent could quote Haiku as if it were the author.", "read() flags them, and the skill says so too: blocks starting [fig-NNN · type] aren't the author's words."],
+      ["A local server is still a door", "Any web page can send requests to localhost.", "The server listens on 127.0.0.1 only, is read-only, and refuses requests carrying browser headers (403)."]
+    ],
+    learn: "Designing tools for agents: few, composable, cheap to read, honest about what is machine-written, and always citable." },
+  { n: 6, name: "Evaluate", what: "Measure search quality", status: "next", kind: "Plain code + LLM judge",
+    inputs: ["A question set with known answer locations"],
+    process: ["About 5 questions per book", "Score recall for keyword, semantic and hybrid search", "LLM-as-judge for answer quality"],
+    outputs: ["data/evals/ (planned)"],
+    learn: "Measuring results instead of guessing." }
+];
+
+const LOG = [
+  ["23 Nov 2026", "CLI + skill, no MCP (yet)", "Claude Code has a shell, so the CLI plus a skill reaches it fully, and a skill costs no context until used. MCP waits until the library is wanted in an app without a shell."],
+  ["23 Nov 2026", "A warm server instead of a faster cold start", "50 s of every search was Python, PyTorch and model loading. A process that stays up pays that once. The stdlib server keeps it dependency-free."],
+  ["23 Nov 2026", "Kindle highlights dropped", "You have few highlights, so the phase wouldn't pay off. Access moves up to Phase 5 and evals to Phase 6. If highlights come back, they attach to chunk ids like the cards do."],
+  ["22 Nov 2026", "Plain code first, LLM on top", "Every stage writes files you can open, and unchanged work is skipped on re-runs. Debugging stays cheap."],
+  ["22 Nov 2026", "The library is read-only", "books/ is a static copy of Calibre. Metadata fixes live in metadata_overrides.json instead of going back to Calibre."],
+  ["22 Nov 2026", "Score every format instead of a fixed preference", "EPUB is usually best, but Rituals, Technological Revolutions and Thinking in Systems each had a better alternative."],
+  ["22 Nov 2026", "Derived text stays local", "data/ holds the full text of purchased books, so it is excluded from git."],
+  ["22 Nov 2026", "Figures are part of extraction", "Saving images, captions and equations is plain code, so it lives in stage 1. Reading what a chart says needs a vision model, so that waits for stage 4."],
+  ["22 Nov 2026", "Chunks never cross a chapter", "Every chunk cites exactly one chapter. That makes some chunks short, but a citation that spans two chapters is worse."],
+  ["22 Nov 2026", "Context instead of overlap", "The previous chunk's last sentences live in context_before. Search sees them, but quoted text stays exactly as written."],
+  ["22 Nov 2026", "Local embeddings, on the GPU", "bge-m3 runs on your machine: the books' text never leaves it, and it matches meaning across English and Portuguese. CUDA PyTorch made the one-time embedding 19× faster."],
+  ["22 Nov 2026", "Haiku labels, the strong agent thinks", "The agent you connect later will be the best model you can pay for. Enrichment only sorts, labels and maps (structured JSON) for a small model: $1.96 for the whole library."],
+  ["22 Nov 2026", "Direct calls over batch", "Batches are half price but can take an hour. At these amounts, speed while iterating was worth about $1 more."],
+  ["22 Nov 2026", "Strict concept links", "Grouping concepts at similarity 0.90, not 0.86. A wrong link (financial leverage to Meadows' leverage points) misleads an agent more than a missed one."],
+  ["22 Nov 2026", "One SQLite file for search", "Keyword index, vectors and citation data in one rebuildable file. No server to run for 9,399 chunks and one user."],
+  ["22 Nov 2026", "Version the extractor", "Bump EXTRACTOR_VERSION when logic changes. Without it, the cache skips books and the change never runs."]
+];
+
+const fmt = n => n.toLocaleString("en-US");
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const words = b => b.front + b.body + b.back;
+
+// header stats
+const total = BOOKS.reduce((s, b) => s + words(b), 0);
+const bodyTotal = BOOKS.reduce((s, b) => s + b.body, 0);
+const secs = BOOKS.reduce((s, b) => s + b.secs, 0);
+const done = STAGES.filter(s => s.status === "done").length;
+document.getElementById("stats").innerHTML = [
+  [`${done} / ${STAGES.length}`, "stages done"],
+  [BOOKS.length, "books extracted"],
+  [`${(total / 1e6).toFixed(2)}M`, "words"],
+  [`${Math.round(bodyTotal / total * 100)}%`, "of it is body text"],
+  [fmt(secs), "chapter files"],
+  [fmt(BOOKS.reduce((s, b) => s + b.figs, 0)), "figures saved"],
+  [fmt(BOOKS.reduce((s, b) => s + b.eqs, 0)), "equations as LaTeX"],
+  [fmt(BOOKS.reduce((s, b) => s + b.chunks, 0)), "citable chunks"],
+  [fmt(BOOKS.reduce((s, b) => s + (b.cards || 0), 0)), "chapter cards"]
+].map(([v, l]) => `<div class="stat"><b>${v}</b><span>${l}</span></div>`).join("");
+
+// rail
+let current = Math.max(0, done - 1);  // open on the latest finished stage
+const rail = document.getElementById("rail");
+function drawRail() {
+  const pct = Math.max(0, done - 1) / (STAGES.length - 1);
+  rail.innerHTML = `<div class="progress" style="width:calc((100% - 60px) * ${Math.min(pct, 1)})"></div>` +
+    STAGES.map(s => `<button class="node" data-status="${s.status}" data-n="${s.n}" aria-current="${s.n === current}">
+      <span class="dot">${s.status === "done" ? "✓" : s.n}</span>
+      <span class="name">${s.n}. ${esc(s.name)}</span>
+      <span class="what">${esc(s.what)}</span></button>`).join("");
+  rail.querySelectorAll(".node").forEach(b => b.addEventListener("click", () => { current = +b.dataset.n; drawRail(); drawStage(); }));
+}
+const statusLabel = { done: "Done", next: "Next up", planned: "Planned" };
+function drawStage() {
+  const s = STAGES[current];
+  const list = a => `<ul>${a.map(x => `<li>${esc(x)}</li>`).join("")}</ul>`;
+  let html = `<article class="stage">
+    <div class="stage-top"><h3>Stage ${s.n} · ${esc(s.name)}</h3>
+      <span class="pill ${s.status}">${statusLabel[s.status]}</span><span class="pill kind">${esc(s.kind)}</span></div>
+    <div class="flow">
+      <div class="box"><div class="eyebrow">In</div>${list(s.inputs)}</div>
+      <div class="arrow" aria-hidden="true">→</div>
+      <div class="box process"><div class="eyebrow">What happens</div>${list(s.process)}</div>
+      <div class="arrow" aria-hidden="true">→</div>
+      <div class="box"><div class="eyebrow">Out</div>${list(s.outputs)}</div>
+    </div>`;
+  if (s.cmds) html += `<div class="cmd">${s.cmds.map(c => `<code>${esc(c)}</code>`).join("")}</div>`;
+  if (s.formula) html += `<div class="lessons"><div class="eyebrow">How the winning format is picked</div>
+<div class="formula">score = 1
+      − 2 × max(0, front-matter share − 15%)    text stranded before chapter 1
+      −     max(0, biggest chapter share − 35%) one section swallowed the book
+      − 0.5 × share of chapters under 50 words  page labels, broken TOCs
+then  × 0.95 for PDF                          page-layout noise
+      × words kept / most words of any format   lost text</div></div>`;
+  if (s.hist) {
+    const peak = Math.max(...CHUNK_HIST.map(b => b.n));
+    const total = CHUNK_HIST.reduce((a, b) => a + b.n, 0);
+    html += `<div class="lessons"><div class="eyebrow">Chunk sizes across the library (${fmt(total)} chunks, words per chunk)</div>
+      <div class="hist" role="img" aria-label="Histogram of chunk sizes">${CHUNK_HIST.map(b =>
+        `<div class="hcol"><span class="hval">${fmt(b.n)}</span><div class="hbar${b.target ? " target" : ""}" style="height:${Math.max(2, b.n / peak * 120)}px"></div><span class="hlbl">${b.label}</span></div>`).join("")}</div>
+      <p style="font-size:13px;color:var(--muted)">The darker bars fall in the target range. Short chunks are mostly one-line endnotes and Pessoa's short fragments, which are complete as they are.</p></div>`;
+  }
+  if (s.enrich && ENRICH.spent) {
+    const ft = Object.entries(ENRICH.figureTypes).sort((a, b) => b[1] - a[1]);
+    const peak = Math.max(...ft.map(x => x[1]));
+    html += `<div class="lessons"><div class="eyebrow">What Haiku produced</div>
+      <div class="kpis">
+        <div><b>${fmt(ENRICH.figures)}</b><span>figures described</span></div>
+        <div><b>${fmt(ENRICH.cards)}</b><span>chapter cards</span></div>
+        <div><b>${fmt(ENRICH.books)}</b><span>book cards</span></div>
+        <div><b>${fmt(ENRICH.crossBook)}</b><span>concepts linking 2+ books</span></div>
+        <div><b>$${ENRICH.spent.usd.toFixed(2)}</b><span>${(ENRICH.spent.input_tokens / 1e6).toFixed(1)}M tokens in, ${(ENRICH.spent.output_tokens / 1e6).toFixed(1)}M out</span></div>
+      </div>
+      <div class="two" style="gap:28px">
+        <div style="display:grid;gap:8px;align-content:start"><div class="eyebrow">Figures by type</div>
+          ${ft.map(([t, n]) => `<div class="cand"><span>${t}</span><span class="bar"><i style="width:${n / peak * 100}%;background:var(${t === "decorative" ? "--front" : "--accent"})"></i></span><span>${n}</span></div>`).join("")}
+          <p style="font-size:13px;color:var(--muted)">Decorative images are dropped; the rest join their chunks as searchable text.</p></div>
+        <div style="display:grid;gap:8px;align-content:start"><div class="eyebrow">Concepts that link the most books</div>
+          ${ENRICH.topConcepts.map(c => `<div class="concept"><b>${esc(c.concept)}</b><span>${c.books.map(id => esc((BOOKS.find(b => b.id === id) || {t: id}).t)).join(" · ")}</span></div>`).join("")}</div>
+      </div>
+      <p style="font-size:13px;color:var(--muted)">Cost by step: ${Object.entries(ENRICH.byKind).map(([k, v]) => `${k}s $${v.usd.toFixed(2)} (${fmt(v.requests)} requests)`).join(" · ")}.</p></div>`;
+  }
+  if (s.compare && COMPARE.results) {
+    const modes = ["keyword", "semantic", "hybrid"];
+    const n = COMPARE.results.length;
+    const cell = r => r ? `<span class="rk ${r === 1 ? "hit" : "near"}">#${r}</span>` : `<span class="rk miss">miss</span>`;
+    html += `<div class="lessons"><div class="eyebrow">12 real questions: where does the right book rank? (top ${COMPARE.top})</div>
+      <div class="table-scroll"><table class="cmp"><thead><tr><th>Question</th><th>What it tests</th>${modes.map(m =>
+        `<th>${m}<br><span class="tot">${COMPARE.totals[m]}/${n}</span></th>`).join("")}</tr></thead><tbody>
+      ${COMPARE.results.map(r => `<tr><td>${esc(r.question)}</td><td class="tests">${esc(r.tests)}</td>${modes.map(m =>
+        `<td>${cell(r.modes[m].rank)}</td>`).join("")}</tr>`).join("")}
+      </tbody></table></div>
+      <p style="font-size:13px;color:var(--muted)">Keyword search misses exactly where the words differ: paraphrase and the two cross-language questions. An English question about loneliness finds Pessoa's Portuguese “solitária peregrinação” through meaning alone. “Right book in the top 5” is a coarse test; Phase 6 will check exact passages.</p></div>`;
+  }
+  if (s.lessons) html += `<div class="lessons"><div class="eyebrow">What broke, and the fix</div>
+    <div class="table-scroll"><table><thead><tr><th>Where</th><th>Problem</th><th>Fix</th></tr></thead><tbody>
+    ${s.lessons.map(r => `<tr><td>${esc(r[0])}</td><td>${esc(r[1])}</td><td>${esc(r[2])}</td></tr>`).join("")}
+    </tbody></table></div></div>`;
+  html += `<div class="learn"><b>You learn</b><span>${esc(s.learn)}</span></div></article>`;
+  document.getElementById("stage").innerHTML = html;
+}
+
+// shelf
+let sortKey = "author", selected = "thinking-in-systems";
+const lastName = a => a.split(",")[0].trim().split(" ").pop();
+function drawShelf() {
+  const books = [...BOOKS].sort(sortKey === "words" ? (a, b) => words(b) - words(a)
+    : sortKey === "score" ? (a, b) => a.score - b.score
+    : sortKey === "figs" ? (a, b) => (b.figs + b.eqs) - (a.figs + a.eqs)
+    : (a, b) => lastName(a.a).localeCompare(lastName(b.a)));
+  const maxSqrt = Math.sqrt(Math.max(...BOOKS.map(words)));
+  document.getElementById("shelf").innerHTML = books.map(b => {
+    const w = Math.max(20, Math.round(Math.sqrt(words(b)) / maxSqrt * 96));
+    return `<button class="spine${b.score < 0.9 ? " low" : ""}" data-fmt="${b.src}" data-id="${b.id}" style="width:${w}px"
+      aria-pressed="${b.id === selected}" aria-label="${esc(b.t)}, ${fmt(words(b))} words, from ${b.src}">
+      <span class="lbl">${esc(b.t)}</span></button>`;
+  }).join("");
+  document.querySelectorAll(".spine").forEach(el => el.addEventListener("click", () => { selected = el.dataset.id; drawShelf(); drawDetail(); }));
+}
+function drawDetail() {
+  const b = BOOKS.find(x => x.id === selected);
+  const tot = words(b);
+  const cands = Object.entries(b.cands).sort((x, y) => y[1] - x[1]);
+  const lang = { eng: "English", por: "Portuguese" }[b.lang] || b.lang;
+  document.getElementById("detail").innerHTML = `
+    <div>
+      <div class="section-head"><div class="eyebrow mono">${esc(b.id)}</div><h3 style="font-size:22px">${esc(b.t)}</h3><p style="color:var(--muted)">${esc(b.a)} · ${lang}</p></div>
+      <dl class="kv">
+        <dt>Words</dt><dd>${fmt(tot)}</dd>
+        <dt>Chapter files</dt><dd>${fmt(b.secs)}</dd>
+        <dt>Formats owned</dt><dd>${b.fmts.join(", ")}</dd>
+        <dt>Used</dt><dd><b>${b.src}</b>${b.src === "MOBI" ? " (converted to EPUB)" : ""}</dd>
+        <dt>Figures</dt><dd>${b.figs ? `${fmt(b.figs)} (${b.caps ? `${fmt(b.caps)} with caption` : "no captions found"})` : "none"}${b.inl ? ` + ${b.inl} inline` : ""}</dd>
+        <dt>Equations</dt><dd>${b.eqs ? `${fmt(b.eqs)} as LaTeX` : "none as text"}</dd>
+        <dt>Chunks</dt><dd>${fmt(b.chunks)} (median ${b.chunkMedian} words)</dd>
+        <dt>Index cards</dt><dd>${b.cards ? `${fmt(b.cards)} chapter cards, ${fmt(b.described)} figures described` : "none"}</dd>
+      </dl>
+      ${b.fixed.length ? `<div class="note fixed">Metadata fixed by hand: ${b.fixed.join(", ")}</div>` : ""}
+      ${(NOTES[b.id] || []).map(w => `<div class="note">${esc(w)}</div>`).join("")}
+      ${b.thesis ? `<div class="card-note"><div class="eyebrow">Book card: thesis (Haiku)</div><span>${esc(b.thesis)}</span>
+        <div class="eyebrow" style="margin-top:6px">Good source for</div><ul>${(b.useFor || []).map(u => `<li>${esc(u)}</li>`).join("")}</ul></div>` : ""}
+    </div>
+    <div>
+      <div class="eyebrow">Where the words are</div>
+      <div class="stack" role="img" aria-label="Front ${b.front}, body ${b.body}, back ${b.back} words">
+        <i style="width:${b.front / tot * 100}%;background:var(--front)"></i>
+        <i style="width:${b.body / tot * 100}%;background:var(--accent)"></i>
+        <i style="width:${b.back / tot * 100}%;background:var(--back)"></i>
+      </div>
+      <div class="legend">
+        <span><i style="background:var(--front)"></i>Front ${fmt(b.front)}</span>
+        <span><i style="background:var(--accent)"></i>Body ${fmt(b.body)}</span>
+        <span><i style="background:var(--back)"></i>Notes, index ${fmt(b.back)}</span>
+      </div>
+      <div class="eyebrow" style="margin-top:6px">Structure score by format</div>
+      ${cands.map(([f, s]) => `<div class="cand${f === b.src ? " win" : ""}"><span>${f}</span>
+        <span class="bar"><i style="width:${s * 100}%;background:var(--${f.toLowerCase()})"></i></span><span>${s.toFixed(2)}</span></div>`).join("")}
+    </div>`;
+}
+document.querySelectorAll(".seg").forEach(b => b.addEventListener("click", () => {
+  sortKey = b.dataset.sort;
+  document.querySelectorAll(".seg").forEach(x => x.setAttribute("aria-pressed", x === b));
+  drawShelf();
+}));
+
+document.getElementById("log").innerHTML = LOG.map(([d, t, p]) =>
+  `<div class="log-item"><time>${d}</time><b>${esc(t)}</b><p>${esc(p)}</p></div>`).join("");
+
+drawRail(); drawStage(); drawShelf(); drawDetail();
+</script>
