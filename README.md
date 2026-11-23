@@ -14,6 +14,8 @@ It's a retrieval-augmented generation (RAG) system you run on your own machine:
 - **Citable passages.** Every book is split into ~400-word passages with stable ids. Page numbers are included for PDFs.
 - **Charts and tables as data** (optional). A vision model writes down the values a chart shows, so search can find them.
 - **Chapter and book summaries and a concept map** (optional). They help an agent decide where to look before it reads.
+- **A Claude Code skill included.** It teaches the agent how to research your library: zoom from shelf to book to
+  chapter to passage, quote only the real text, and cite every claim. See [Use it from Claude Code](#use-it-from-claude-code).
 - **A measured search.** A built-in eval tells you how often the right passage comes up, so changes are compared, not guessed.
 - **Local first.** Book text, the index and the embedding model stay on your machine. Only the optional summary steps send text to the Anthropic API.
 
@@ -77,15 +79,26 @@ what changed.
 
 ### Use it from Claude Code
 
+The repo ships a **Claude Code skill**: instructions that Claude
+loads by itself whenever you ask about your books. You can read it before installing:
+**[`src/bookshelf/skill_template.md`](src/bookshelf/skill_template.md)**. It covers:
+
+- **The workflow:** shelf → search → chapter card → exact passage, and when to use each command.
+- **The rules:** quote only text returned by `books read`, cite every claim with its passage id, treat machine-written
+  summaries as navigation (never as the author's words), and say so when the library doesn't cover something.
+- **When to start the server** for meaning and cross-language search.
+
+It's a template because the finished skill holds things that are yours: this folder's path, your book list (so Claude
+knows when to use it) and your non-English books. One command fills them in:
+
 ```bash
 uv run books skill            # writes .claude/skills/books/SKILL.md for your library
 uv run books skill --global   # ...and installs it for every Claude Code session
 uv run books serve            # keep the model loaded: meaning search in ~0.1 s
 ```
 
-Then just ask Claude Code about your books. The skill teaches it the commands and the citation rules: quote only text
-returned by `books read`, and treat summaries as navigation, not as the author's words. Without `books serve`, search
-falls back to keyword-only and says so. Starting the server takes about a minute, because loading PyTorch and the
+Then just ask Claude Code about your books, or type `/books`. Re-run `books skill` after adding books, so its book list
+stays current. Without `books serve`, search falls back to keyword-only and says so. Starting the server takes about a minute, because loading PyTorch and the
 model is the slow part.
 
 ### Add a book later
@@ -109,7 +122,7 @@ uv run books build NEW_BOOK_ID --yes   # `uv run books catalog` then `uv run boo
 | `books related "concept"` | Where an idea appears across books |
 | `books figure BOOK:fig-NNN` | What a chart, table or diagram shows, as data |
 | `books serve [--status\|--stop]` | Local server that keeps the model warm (127.0.0.1 only) |
-| `books skill [--global]` | Write the Claude Code skill for this library |
+| `books skill [--global] [--print]` | Write the Claude Code skill for this library (`--print` to preview it) |
 | `books eval questions\|judge\|run` | Measure search quality (see below) |
 
 Every agent-facing command prints compact text by default (cheaper for an agent to read) or JSON with `--json`.
