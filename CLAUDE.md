@@ -1,4 +1,8 @@
-# Books-Analyser
+# Books CLI
+
+Repo: github.com/m4rcoshdc/books-cli (public; renamed from Books-Analyser on 2026-11-23).
+The local folder is still `Books-Analyser`, because the skill's path and Claude's
+session memory point at it. Rename it only together with those.
 
 Turns the user's Calibre library (`books/`, mirrors their Kindle) into an
 agent-friendly knowledge layer. It's also a learning project: keep each
