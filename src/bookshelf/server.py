@@ -45,7 +45,7 @@ class _Handler(BaseHTTPRequestHandler):
         if self.path != "/health":
             return self._send(404, {"error": "unknown path"})
         self._send(200, {"ok": True, "model": f"{emb.MODEL} {emb.precision()} on {emb.device()}",
-                         "up_seconds": round(time.time() - _started), "requests": _requests})
+                         "data": lib.DATA_ID, "up_seconds": round(time.time() - _started), "requests": _requests})
 
     def do_POST(self):
         global _requests
@@ -75,7 +75,9 @@ class _Handler(BaseHTTPRequestHandler):
 
 def run(log=print) -> None:
     if lib.server_up():
-        log(f"Already running on {lib.SERVER_HOST}:{lib.SERVER_PORT}.")
+        h = _call("GET", "/health") or {}
+        other = "" if h.get("data") == lib.DATA_ID else f" for another library ({h.get('data', '?')}); stop it first"
+        log(f"Already running on {lib.SERVER_HOST}:{lib.SERVER_PORT}{other}.")
         return
     t = time.time()
     log("Loading bge-m3 (about a minute)...")
@@ -107,7 +109,10 @@ def status() -> str:
     h = _call("GET", "/health")
     if not h:
         return "Not running. Start it with `books serve` (meaning search falls back to keyword meanwhile)."
-    return f"Running: {h['model']}, up {h['up_seconds'] // 60} min, {h['requests']} requests."
+    if h.get("data") != lib.DATA_ID:
+        return (f"A server for ANOTHER library is running ({h.get('data', '?')}). This library uses keyword search "
+                "until it's stopped (`books serve --stop` from that copy) and `books serve` is run here.")
+    return f"Running: {h['model']}, up {h['up_seconds'] // 60} min, {h['requests']} requests, data {h['data']}."
 
 
 def stop() -> str:

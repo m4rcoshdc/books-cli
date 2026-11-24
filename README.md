@@ -206,7 +206,8 @@ matters: it decides which books get cross-language test questions.
 - The summaries are written by a small model and can be wrong (for example, it misnumbered some chapters). The
   tools use them for navigation only, and the skill tells agents to quote from the text.
 - Some editions put sidebars and pull-quotes inside the main text, and they get extracted along with it.
-- Single user, local. The server is a convenience, not a service.
+- Single user, local. The server is a convenience, not a service. There's one per machine (port 8765): if you keep
+  two copies, a copy only uses the server it started itself, and otherwise falls back to keyword search with a note.
 - No MCP server yet: Claude Code uses the CLI through the skill. A regular Claude chat without a shell can't use it.
 
 ## License

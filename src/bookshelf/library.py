@@ -29,12 +29,15 @@ from . import embed as emb
 from . import index as ix
 from .catalog import load_catalog
 from .concepts import load as load_concepts
-from .config import BOOKS_DIR
+from .config import BOOKS_DIR, DATA
 from .enrich import load_results
 from .extract import load_manifest
 
 SERVER_HOST = "127.0.0.1"
 SERVER_PORT = 8765
+# Which library this process serves. Two copies on one machine share the port, so the CLI only
+# uses a server whose /health reports the same data folder (else: wrong books, silently).
+DATA_ID = str(DATA.resolve())
 CARD_NOTE = "Summaries, key points and figure descriptions are machine-written (Claude Haiku). " \
             "Navigate with them; quote only text returned by read()."
 
@@ -273,9 +276,21 @@ def server_up(timeout: float = 0.2) -> bool:
         return False
 
 
-def _remote(tool: str, args: dict) -> dict | None:
-    """Call the warm server (`books serve`) if it is running, else None."""
+@functools.cache
+def _server_is_ours() -> bool | None:
+    """True: our server is up. False: a server for another library holds the port. None: nothing running."""
     if not server_up():
+        return None
+    try:
+        with urllib.request.urlopen(f"http://{SERVER_HOST}:{SERVER_PORT}/health", timeout=3) as r:
+            return json.loads(r.read().decode("utf-8")).get("data") == DATA_ID
+    except (OSError, ValueError):
+        return False
+
+
+def _remote(tool: str, args: dict) -> dict | None:
+    """Call the warm server (`books serve`) if it is running for THIS library, else None."""
+    if not _server_is_ours():
         return None
     req = urllib.request.Request(f"http://{SERVER_HOST}:{SERVER_PORT}/tool/{tool}",
                                  data=json.dumps(args).encode("utf-8"),
@@ -312,8 +327,12 @@ def search(query: str, k: int = 8, book: str | None = None, mode: str = "hybrid"
             return remote
         if mode == "hybrid":
             mode = "keyword"
-            note = ("Keyword search only: meaning search needs the warm server. Start it with `books serve` "
-                    "(about a minute to load). Rephrasing with the book's own words helps meanwhile.")
+            if _server_is_ours() is False:
+                note = ("Keyword search only: the server on port 8765 belongs to another copy of books-cli (another "
+                        "library). Stop it from that copy, then run `books serve` here.")
+            else:
+                note = ("Keyword search only: meaning search needs the warm server. Start it with `books serve` "
+                        "(about a minute to load). Rephrasing with the book's own words helps meanwhile.")
     cap = per_book if (per_book and not book_id) else 0
     hits = ix.search(query, mode, k * 4 if cap else k, book_id, ("body", "back") if notes else ("body",))
     if cap:

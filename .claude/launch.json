@@ -5,7 +5,8 @@
       "name": "shelf",
       "runtimeExecutable": "uv",
       "runtimeArgs": ["run", "books", "site", "--serve"],
-      "port": 8790
+      "port": 8790,
+      "autoPort": false
     }
   ]
 }
