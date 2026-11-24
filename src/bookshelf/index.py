@@ -117,7 +117,9 @@ def build(embeddings: bool = True, progress: Callable[[int, int, float], None] |
     items = []
     for rowid, c in enumerate(rows, 1):
         etext = embed_text(c, titles[c["book"]])
-        h = emb.text_hash(etext)
+        # text_hash includes the model's precision, which asks PyTorch: keyword-only builds skip it,
+        # so they never load PyTorch at all.
+        h = emb.text_hash(etext) if embeddings else None
         items.append((h, etext))
         db.execute(
             "INSERT INTO chunks VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
