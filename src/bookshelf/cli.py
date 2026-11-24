@@ -118,6 +118,22 @@ def skill(global_: bool = typer.Option(False, "--global", help="Also install for
 
 
 @app.command()
+def site(open_: bool = typer.Option(False, "--open", help="Open the page in your browser afterwards"),
+         serve: bool = typer.Option(False, "--serve", help="Serve it on 127.0.0.1:8790 and save reading status")):
+    """Build the bookshelf web page (3D shelf + book overviews) into data/site/."""
+    from . import site as st
+
+    out = st.build()
+    typer.echo(f"wrote {out}")
+    url = f"http://{st.SERVE_HOST}:{st.SERVE_PORT}/" if serve else out.as_uri()
+    if open_:
+        import webbrowser
+        webbrowser.open(url)
+    if serve:
+        st.serve(log=typer.echo)
+
+
+@app.command()
 def catalog():
     """Phase 0: read Calibre's metadata.db into data/catalog.json."""
     books = cat.build_catalog()

@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "shelf",
+      "runtimeExecutable": "uv",
+      "runtimeArgs": ["run", "books", "site", "--serve"],
+      "port": 8790
+    }
+  ]
+}

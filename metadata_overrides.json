@@ -1,5 +1,5 @@
 {
-  "_comment": "Hand-curated metadata fixes, keyed by book id. Any catalog field set here replaces the value read from books/metadata.db.",
+  "_comment": "Hand-curated metadata fixes, keyed by book id. Any catalog field set here replaces the value read from books/metadata.db. cover_url swaps the cover on the `books site` shelf (downloaded once into data/cache/covers/).",
   "the-hard-thing-about-hard-things": {
     "authors": ["Ben Horowitz"]
   },
@@ -15,7 +15,8 @@
     "languages": ["eng"]
   },
   "the-sailor-who-fell-from-grace": {
-    "authors": ["Yukio Mishima"]
+    "authors": ["Yukio Mishima"],
+    "cover_url": "https://images.penguinrandomhouse.com/cover/tif/9780679750154"
   },
   "a-lanterna-na-popa-memorias-vol": {
     "title": "A Lanterna na Popa: Memórias, Vol. 1",

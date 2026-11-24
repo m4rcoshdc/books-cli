@@ -13,5 +13,8 @@ __pycache__/
 
 # Generated per person by `books skill` (contains this machine's path and library).
 /.claude/skills/books/SKILL.md
+# Personal reading log, set from the shelf page.
+/reading.json
+/reading.tmp
 # Claude Code's local settings.
 /.claude/settings.local.json

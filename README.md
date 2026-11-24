@@ -101,6 +101,23 @@ Then just ask Claude Code about your books, or type `/books`. Re-run `books skil
 stays current. Without `books serve`, search falls back to keyword-only and says so. Starting the server takes about a minute, because loading PyTorch and the
 model is the slow part.
 
+### Browse it as a bookshelf
+
+```bash
+uv run books site --open           # writes data/site/index.html and opens it
+uv run books site --serve --open   # same, served on 127.0.0.1:8790 so reading status is saved
+```
+
+A static page in the spirit of [Stripe Press](https://stripe.press): your books as 3D volumes on a shelf, with spine
+colours picked from each cover and thickness from the word count. Hover (or use ← →) to pull a book out; rest the mouse near either edge and the shelf glides that way. Click to open
+it: the cover swings open onto a one-page overview with the thesis, what the book is good for, its main topics and
+the books it shares ideas with. Everything is inlined, so it works straight from disk.
+Mark each book unread, reading or read: a ribbon bookmark sticks out of the book you're reading, and read books
+turn brass. With `--serve` your choices are saved to `reading.json` (gitignored); opened from disk, they stay in that
+browser only. The page lives under `data/` (gitignored), like the rest of your library's derived data. Re-run after
+`books build`.
+Don't like a cover? Give the book a `"cover_url"` in `metadata_overrides.json`, run `books catalog`, then `books site`.
+
 ### Add a book later
 
 Add it in Calibre (and copy the library again if you use `./books/`), then:
@@ -123,6 +140,7 @@ uv run books build NEW_BOOK_ID --yes   # `uv run books catalog` then `uv run boo
 | `books figure BOOK:fig-NNN` | What a chart, table or diagram shows, as data |
 | `books serve [--status\|--stop]` | Local server that keeps the model warm (127.0.0.1 only) |
 | `books skill [--global] [--print]` | Write the Claude Code skill for this library (`--print` to preview it) |
+| `books site [--open] [--serve]` | Build the bookshelf web page into `data/site/` (`--serve` saves reading status) |
 | `books eval questions\|judge\|run` | Measure search quality (see below) |
 
 Every agent-facing command prints compact text by default (cheaper for an agent to read) or JSON with `--json`.
